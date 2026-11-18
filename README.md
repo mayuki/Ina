@@ -108,6 +108,7 @@ no runtime code generation, reflection only where the compiler can see it, and
 | Hosts | Anywhere ILCompiler runs. Developed and tested on `linux-x64`; other hosts are untested |
 | Frameworks | .NET 10 and later (the NativeAOT runtime pack layout introduced with .NET 10) |
 | Verified | Console apps, multi-assembly apps, `System.Text.Json`, exceptions, GC, threads and tasks, thread statics, file I/O, sockets, loopback HTTP, compression, crypto through OpenSSL |
+| Self-hosting | `ina` compiles itself: the native `ina` builds applications, and rebuilding itself with it yields a byte-identical executable |
 
 Not done yet:
 
@@ -135,7 +136,7 @@ Verification gaps are listed in [docs/Design.md](docs/Design.md#verification).
 
 ```console
 $ dotnet build
-$ dotnet test          # ~150 tests, about 30 seconds
+$ dotnet test          # ~150 tests, well under a minute
 ```
 
 The tests do not use a native toolchain: object files are assembled in memory by a

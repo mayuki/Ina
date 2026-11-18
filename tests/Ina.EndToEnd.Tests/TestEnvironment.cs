@@ -47,6 +47,17 @@ internal static class TestEnvironment
         return path;
     }
 
+    /// <summary>The IL assembly of the <c>ina</c> tool in its own build output (without the test assemblies around it).</summary>
+    public static string InaAssembly
+    {
+        get
+        {
+            var path = Path.GetFullPath(Metadata["InaAssembly"]);
+            Assert.True(File.Exists(path), $"The ina tool was not built: {path}");
+            return path;
+        }
+    }
+
     /// <summary>Compiles an application to a native executable inside <paramref name="directory"/>.</summary>
     public static async Task<BuildResult> BuildAsync(string assembly, string directory, Func<BuildOptions, BuildOptions>? configure = null)
     {

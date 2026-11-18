@@ -212,7 +212,7 @@ larger step: the passes of 3.1 are format-neutral in spirit, but the input model
 |---|---|
 | `Ina.Linker.Tests` | Links small programs that are assembled in memory by `ElfObjectBuilder` and runs them: imports, GOT/PLT, constructors, TLS models, archives, weak and common symbols, COMDAT, garbage collection, unwind tables, image layout. AArch64 relocations are additionally checked by decoding the patched instructions, which needs no AArch64 machine. |
 | `Ina.Core.Tests` | ILCompiler arguments, application inspection, pack selection and download against an in-memory package feed. |
-| `Ina.EndToEnd.Tests` | Compiles the samples with the full pipeline, runs them and compares the output with the regular .NET runtime executing the same assembly; drives the `ina` command. |
+| `Ina.EndToEnd.Tests` | Compiles the samples with the full pipeline, runs them and compares the output with the regular .NET runtime executing the same assembly; drives the `ina` command. Also compiles `ina` itself and uses the native tool to build an application. |
 
 The test suite does not use a native toolchain. Machine code in tests is written as bytes
 with the assembly as comments.
@@ -225,6 +225,8 @@ What has been verified, and how:
   and behave identically to the regular runtime.
 - `linux-arm64`: cross compiled on x64 and run under `qemu-aarch64` with the glibc 2.39
   of Ubuntu's cross packages.
+- Self-hosting: `ina` compiled by itself builds the samples (also for arm64), and compiling
+  itself again with the native tool produces a byte-identical executable.
 - Symbol versions: the samples require at most `GLIBC_2.17` on both architectures, and a
   test checks that nothing newer than the 2.27 baseline is ever required.
 
