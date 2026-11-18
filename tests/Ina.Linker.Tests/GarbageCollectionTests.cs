@@ -41,6 +41,36 @@ public class GarbageCollectionTests : LinkerTestBase
         Assert.Equal(0, Run(output).ExitCode);
     }
 
+    [Fact]
+    public void ExportedSymbolCanBeLookedUpAtRunTime()
+    {
+        // Diagnostic tools locate the runtime through an exported symbol, so the dynamic symbol table and its hash
+        // table must work for definitions too, not only for imports.
+        var builder = new ElfObjectBuilder();
+        var name = builder.ReadOnlyData(".rodata", "exported_function\0"u8);
+        var text = builder.Text(".text",
+            0x48, 0x83, 0xec, 0x08,                   // main: sub  rsp, 8
+            0x31, 0xff,                               //       xor  edi, edi              ; RTLD_DEFAULT
+            0x48, 0x8d, 0x35, 0x00, 0x00, 0x00, 0x00, //       lea  rsi, [rip + name]
+            0xe8, 0x00, 0x00, 0x00, 0x00,             //       call dlsym
+            0x48, 0x85, 0xc0,                         //       test rax, rax
+            0x74, 0x07,                               //       jz   missing
+            0xff, 0xd0,                               //       call rax
+            0x48, 0x83, 0xc4, 0x08,                   //       add  rsp, 8
+            0xc3,                                     //       ret
+            0xb8, 0x63, 0x00, 0x00, 0x00,             // missing: mov eax, 99
+            0x48, 0x83, 0xc4, 0x08,                   //       add  rsp, 8
+            0xc3);                                    //       ret
+        builder.Global("main", text);
+        builder.Global("exported_function", builder.Text(".text.exported", Code.Return(77)));
+        builder.Relocate(text, 9, RelocX64.Pc32, name, -4);
+        builder.Relocate(text, 14, RelocX64.Plt32, "dlsym", -4);
+
+        var output = Link(static o => o with { ExportedSymbols = ["exported_function"] }, builder.Build());
+
+        Assert.Equal(77, Run(output).ExitCode);
+    }
+
     /// <summary>A program with an unreferenced function that calls a symbol nobody defines.</summary>
     private static byte[] ProgramWithDeadCode()
     {
