@@ -1,0 +1,10 @@
+{
+  "name": "Ina Sample Store",
+  "updated": "2026-11-18",
+  "products": [
+    { "id": 1, "name": "Mechanical Keyboard", "price": 129.90, "tags": ["hardware", "input"] },
+    { "id": 2, "name": "USB-C Cable", "price": 9.50, "tags": ["hardware", "cable"], "inStock": false },
+    { "id": 3, "name": "抹茶ラテ", "price": 4.25, "tags": ["drink"] },
+    { "id": 4, "name": "Trackball", "price": 79.00, "tags": ["hardware", "input"] }
+  ]
+}

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Culture-independent output, and no dependency on ICU at run time. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\JsonReader.Models\JsonReader.Models.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="catalog.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

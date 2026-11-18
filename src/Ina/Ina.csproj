@@ -4,6 +4,10 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>ina</AssemblyName>
     <RootNamespace>Ina.Cli</RootNamespace>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>ina</ToolCommandName>
+    <PackageId>Ina</PackageId>
+    <Description>Ina (IL to NAtive) compiles .NET applications to native executables without a native toolchain.</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -11,7 +15,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
     <PackageReference Include="System.CommandLine" />
   </ItemGroup>
 
