@@ -25,9 +25,9 @@ public sealed class IlcCompiler(ILogger logger)
         startInfo.ArgumentList.Add($"@{responseFilePath}");
 
         using var process = new Process { StartInfo = startInfo };
-        var errors = new List<string>();
-        process.OutputDataReceived += (_, e) => Report(e.Data, errors);
-        process.ErrorDataReceived += (_, e) => Report(e.Data, errors);
+        var output = new List<string>();
+        process.OutputDataReceived += (_, e) => Report(e.Data, output);
+        process.ErrorDataReceived += (_, e) => Report(e.Data, output);
 
         try
         {
@@ -52,13 +52,16 @@ public sealed class IlcCompiler(ILogger logger)
 
         if (process.ExitCode != 0)
         {
-            var details = errors.Count > 0 ? Environment.NewLine + string.Join(Environment.NewLine, errors.TakeLast(20)) : string.Empty;
+            var details = output.Count > 0 ? Environment.NewLine + string.Join(Environment.NewLine, output.TakeLast(20)) : string.Empty;
             throw new InaException($"ILCompiler failed with exit code {process.ExitCode}.{details}");
         }
     }
 
-    /// <summary>Classifies a line of compiler output; ILCompiler uses the MSBuild "file: warning CODE: text" format.</summary>
-    private void Report(string? line, List<string> errors)
+    /// <summary>
+    /// Classifies a line of compiler output; ILCompiler uses the MSBuild "file: warning CODE: text" format.
+    /// Everything except warnings is remembered so that a failure can be reported with its context.
+    /// </summary>
+    private void Report(string? line, List<string> output)
     {
         if (string.IsNullOrWhiteSpace(line))
         {
@@ -67,9 +70,9 @@ public sealed class IlcCompiler(ILogger logger)
 
         if (line.Contains(": error ", StringComparison.Ordinal) || line.StartsWith("error", StringComparison.OrdinalIgnoreCase))
         {
-            lock (errors)
+            lock (output)
             {
-                errors.Add(line);
+                output.Add(line);
             }
 
             logger.LogError("{Line}", line);
@@ -80,9 +83,9 @@ public sealed class IlcCompiler(ILogger logger)
         }
         else
         {
-            lock (errors)
+            lock (output)
             {
-                errors.Add(line);
+                output.Add(line);
             }
 
             logger.LogDebug("{Line}", line);

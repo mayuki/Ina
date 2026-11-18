@@ -58,6 +58,15 @@ $ dotnet build                                   # builds ina into src/Ina/bin
 $ dotnet src/Ina/bin/Debug/net10.0/ina.dll --help
 ```
 
+`ina` can also be packaged and installed as a local .NET tool (a package of about 450 KB):
+
+```console
+$ dotnet pack src/Ina -c Release -o artifacts
+$ cd ../MyApp && dotnet new tool-manifest
+$ dotnet tool install Ina --add-source ../Ina/artifacts --version 0.1.0
+$ dotnet ina bin/Release/net10.0/MyApp.dll
+```
+
 `ina` takes the application assembly as produced by `dotnet build` (framework-dependent
 output is what you want; the dependencies next to it are picked up automatically).
 
