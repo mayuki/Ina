@@ -1,10 +1,20 @@
 <Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/HelloWorld/HelloWorld.csproj" />
+    <Project Path="samples/RuntimeTour/RuntimeTour.csproj" />
+  </Folder>
+  <Folder Name="/samples/JsonReader/">
+    <Project Path="samples/JsonReader/JsonReader.Models/JsonReader.Models.csproj" />
+    <Project Path="samples/JsonReader/JsonReader/JsonReader.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Ina.Core/Ina.Core.csproj" />
     <Project Path="src/Ina.Linker/Ina.Linker.csproj" />
     <Project Path="src/Ina/Ina.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Ina.Core.Tests/Ina.Core.Tests.csproj" />
+    <Project Path="tests/Ina.EndToEnd.Tests/Ina.EndToEnd.Tests.csproj" />
     <Project Path="tests/Ina.Linker.Tests/Ina.Linker.Tests.csproj" />
   </Folder>
 </Solution>

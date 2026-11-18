@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Ina.EndToEnd.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ina.Core\Ina.Core.csproj" />
+    <ProjectReference Include="..\..\src\Ina\Ina.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The samples are the applications under test: they are built along with the tests but not referenced. -->
+    <ProjectReference Include="..\..\samples\HelloWorld\HelloWorld.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\samples\JsonReader\JsonReader\JsonReader.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\samples\RuntimeTour\RuntimeTour.csproj" ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Lets the tests find the build output of the samples. -->
+    <AssemblyMetadata Include="SamplesDirectory" Value="$(MSBuildThisFileDirectory)..\..\samples" />
+    <AssemblyMetadata Include="SamplesConfiguration" Value="$(Configuration)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>
