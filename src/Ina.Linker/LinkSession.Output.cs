@@ -315,11 +315,15 @@ internal sealed partial class LinkSession
             }
         }
 
-        loads.Add((segmentRank, segmentStart, fileBackedEnd, memoryEnd));
         if (_relRoStart != 0 && _relRoEnd == 0)
         {
             _relRoEnd = AlignUp(address, pageSize);
         }
+
+        // The loader changes the protection of the whole RELRO region, so all of it must be mapped. When nothing
+        // follows the region, the padding up to its page-aligned end becomes zero-filled memory of the segment.
+        memoryEnd = Math.Max(memoryEnd, _relRoEnd);
+        loads.Add((segmentRank, segmentStart, fileBackedEnd, memoryEnd));
 
         _dataEnd = fileBackedEnd;
         _imageEnd = memoryEnd;

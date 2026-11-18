@@ -58,6 +58,7 @@ internal abstract class TargetArch
     public static TargetArch Create(TargetArchitecture architecture) => architecture switch
     {
         TargetArchitecture.X64 => new X64Target(),
+        TargetArchitecture.Arm64 => new Arm64Target(),
         _ => throw new LinkerException($"unsupported target architecture: {architecture}"),
     };
 

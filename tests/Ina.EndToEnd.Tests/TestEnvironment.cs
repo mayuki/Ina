@@ -16,6 +16,28 @@ internal static class TestEnvironment
     /// <summary>Whether executables built for x86-64 Linux can be run on this machine.</summary>
     public static bool CanRunLinuxX64 => OperatingSystem.IsLinux() && RuntimeInformation.ProcessArchitecture == Architecture.X64;
 
+    private const string Arm64Emulator = "qemu-aarch64";
+    private const string Arm64SystemRoot = "/usr/aarch64-linux-gnu";
+
+    /// <summary>
+    /// Whether executables built for AArch64 Linux can be run: natively, or through user mode emulation with the
+    /// C library of a cross toolchain (packages qemu-user and libc6-arm64-cross on Debian and Ubuntu).
+    /// </summary>
+    public static bool CanRunLinuxArm64 => OperatingSystem.IsLinux()
+        && (RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+            || (IsOnPath(Arm64Emulator) && File.Exists(Path.Combine(Arm64SystemRoot, "lib", "ld-linux-aarch64.so.1"))));
+
+    /// <summary>Runs an AArch64 executable, under emulation when the host is not AArch64.</summary>
+    public static Task<ProcessResult> RunArm64Async(string path, params string[] arguments) =>
+        RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+            ? RunAsync(path, arguments)
+            : RunAsync(Arm64Emulator, ["-L", Arm64SystemRoot, path, .. arguments]);
+
+    private static bool IsOnPath(string program) =>
+        (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Any(directory => File.Exists(Path.Combine(directory, program)));
+
     /// <summary>Path of the IL assembly of a sample, as built by <c>dotnet build</c>.</summary>
     public static string SampleAssembly(string projectDirectory, string assemblyName)
     {

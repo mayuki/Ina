@@ -103,6 +103,26 @@ public class ImageLayoutTests : LinkerTestBase
         Assert.True(image.GetSection(".bss").Address >= end);
     }
 
+    [Theory]
+    [InlineData(TargetArchitecture.X64)]
+    [InlineData(TargetArchitecture.Arm64)]
+    public void RelocationReadOnlyRegionIsBackedByALoadableSegmentEvenInTinyImages(TargetArchitecture architecture)
+    {
+        // Without any ordinary data the protected region is the last thing in the image. The loader changes the
+        // protection of the whole region, so all of it has to be mapped.
+        var machine = architecture == TargetArchitecture.X64 ? ElfMachine.X86_64 : ElfMachine.AArch64;
+        var code = architecture == TargetArchitecture.X64 ? Code.Return(0) : Code.Arm64(0x52800000, 0xd65f03c0);
+        var builder = new ElfObjectBuilder(machine);
+        builder.Global("main", builder.Text(".text", code));
+
+        var image = Load(Link(o => o with { Architecture = architecture, Imports = ImportLibrarySet.ForGlibc(architecture) }, builder.Build()));
+        var relro = Assert.Single(image.Segments, static s => s.Type == SegmentType.GnuRelRo);
+        var load = Assert.Single(image.Segments, s => s.Type == SegmentType.Load && s.Address <= relro.Address && relro.Address < s.Address + s.MemorySize);
+
+        Assert.True(relro.Address + relro.MemorySize <= load.Address + load.MemorySize);
+        Assert.Equal(0UL, (relro.Address + relro.MemorySize) % load.Alignment);
+    }
+
     [Fact]
     public void ZeroInitializedDataTakesNoSpaceInTheFile()
     {

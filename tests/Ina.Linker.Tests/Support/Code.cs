@@ -14,6 +14,18 @@ internal static class Code
     /// <summary><c>mov eax, value ; ret</c></summary>
     public static byte[] Return(int value) => [0xb8, (byte)value, (byte)(value >> 8), (byte)(value >> 16), (byte)(value >> 24), 0xc3];
 
+    /// <summary>Encodes AArch64 instructions, which are 32-bit little-endian words.</summary>
+    public static byte[] Arm64(params uint[] instructions)
+    {
+        var code = new byte[instructions.Length * 4];
+        for (var i = 0; i < instructions.Length; i++)
+        {
+            LittleEndian.U32(code, i * 4, instructions[i]);
+        }
+
+        return code;
+    }
+
     /// <summary>An object with a single global function.</summary>
     public static byte[] Function(string name, byte[] code, string section = ".text")
     {
