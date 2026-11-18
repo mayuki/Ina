@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ina.Core/Ina.Core.csproj" />
+    <Project Path="src/Ina.Linker/Ina.Linker.csproj" />
+    <Project Path="src/Ina/Ina.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ina.Linker.Tests/Ina.Linker.Tests.csproj" />
+  </Folder>
+</Solution>
