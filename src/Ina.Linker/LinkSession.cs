@@ -572,12 +572,14 @@ internal sealed partial class LinkSession
     /// </summary>
     private void ScanRelocations()
     {
+        _target.Prepare(_context, LiveFragments());
         foreach (var fragment in LiveFragments())
         {
             var symbols = fragment.File.Symbols;
-            foreach (ref readonly var relocation in fragment.Relocations.AsSpan())
+            var relocations = fragment.Relocations;
+            for (var i = 0; i < relocations.Length;)
             {
-                var symbol = symbols[relocation.SymbolIndex];
+                var symbol = symbols[relocations[i].SymbolIndex];
                 if (symbol.Kind == SymbolKind.Undefined)
                 {
                     ClassifyUndefined(symbol, fragment);
@@ -585,11 +587,14 @@ internal sealed partial class LinkSession
 
                 try
                 {
-                    _target.Scan(_context, fragment, relocation, symbol);
+                    // A target may handle a sequence of relocations at once; the ones it consumed are not scanned,
+                    // so a symbol that is only referenced by rewritten code is never imported.
+                    i += _target.ScanAt(_context, fragment, i, symbol);
                 }
                 catch (LinkerException e)
                 {
                     _errors.Add(e.Message);
+                    i++;
                 }
             }
         }

@@ -39,6 +39,12 @@ internal sealed class LinkContext
 
     public ulong TlsAlignment { get; set; } = 1;
 
+    /// <summary>
+    /// Whether local-dynamic TLS accesses are rewritten to thread pointer arithmetic. Their offsets are then relative
+    /// to the thread pointer instead of the TLS block, which is why the decision applies to the whole link.
+    /// </summary>
+    public bool RelaxLocalDynamicTls { get; set; }
+
     /// <summary>Records a relocation that makes the loader store the address of an imported symbol.</summary>
     public void AddSymbolicRelocation(Fragment fragment, ulong offset, Symbol symbol, long addend)
     {
@@ -63,9 +69,10 @@ internal sealed class LinkContext
     public void ApplyRelocations(Fragment fragment, Span<byte> data)
     {
         var symbols = fragment.File.Symbols;
-        foreach (ref readonly var relocation in fragment.Relocations.AsSpan())
+        var relocations = fragment.Relocations;
+        for (var i = 0; i < relocations.Length;)
         {
-            Target.Apply(this, fragment, data, relocation, symbols[relocation.SymbolIndex]);
+            i += Target.ApplyAt(this, fragment, data, i, symbols[relocations[i].SymbolIndex]);
         }
     }
 

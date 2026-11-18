@@ -65,6 +65,27 @@ internal static class TestEnvironment
     /// <summary>Runs the IL assembly on the regular .NET runtime, which serves as the reference behavior.</summary>
     public static Task<ProcessResult> RunOnJitAsync(string assembly, params string[] arguments) => RunAsync("dotnet", ["exec", assembly, .. arguments]);
 
+    /// <summary>
+    /// Starts a process, retrying while the executable is "busy". Tests run in parallel, and a process forked by
+    /// another test briefly inherits the handle through which this test wrote its executable; the kernel refuses to
+    /// execute a file that is open for writing anywhere (ETXTBSY).
+    /// </summary>
+    private static async Task<Process> StartWithRetryAsync(ProcessStartInfo startInfo)
+    {
+        const int TextFileBusy = 26;
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return Process.Start(startInfo)!;
+            }
+            catch (System.ComponentModel.Win32Exception e) when (e.NativeErrorCode == TextFileBusy && attempt < 50)
+            {
+                await Task.Delay(20, TestContext.Current.CancellationToken);
+            }
+        }
+    }
+
     public static async Task<ProcessResult> RunAsync(string fileName, params string[] arguments)
     {
         var startInfo = new ProcessStartInfo(fileName) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
@@ -73,7 +94,7 @@ internal static class TestEnvironment
             startInfo.ArgumentList.Add(argument);
         }
 
-        using var process = Process.Start(startInfo)!;
+        using var process = await StartWithRetryAsync(startInfo);
         var output = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
         var error = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);

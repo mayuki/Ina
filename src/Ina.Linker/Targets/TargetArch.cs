@@ -32,11 +32,35 @@ internal abstract class TargetArch
 
     public abstract uint Abs64Relocation { get; }
 
+    /// <summary>
+    /// Called once before relocations are scanned, for decisions that depend on all live fragments together.
+    /// </summary>
+    public virtual void Prepare(LinkContext context, IEnumerable<Fragment> liveFragments)
+    {
+    }
+
     /// <summary>Decides which GOT entries, PLT stubs and dynamic relocations a relocation requires.</summary>
     public abstract void Scan(LinkContext context, Fragment fragment, in Relocation relocation, Symbol symbol);
 
     /// <summary>Patches <paramref name="data"/> (the content of <paramref name="fragment"/>) for one relocation.</summary>
     public abstract void Apply(LinkContext context, Fragment fragment, Span<byte> data, in Relocation relocation, Symbol symbol);
+
+    /// <summary>
+    /// Scans the relocation at <paramref name="index"/> and returns how many relocations were handled. Targets
+    /// override this to recognize instruction sequences that span several relocations.
+    /// </summary>
+    public virtual int ScanAt(LinkContext context, Fragment fragment, int index, Symbol symbol)
+    {
+        Scan(context, fragment, fragment.Relocations[index], symbol);
+        return 1;
+    }
+
+    /// <summary>Applies the relocation at <paramref name="index"/> and returns how many relocations were handled.</summary>
+    public virtual int ApplyAt(LinkContext context, Fragment fragment, Span<byte> data, int index, Symbol symbol)
+    {
+        Apply(context, fragment, data, fragment.Relocations[index], symbol);
+        return 1;
+    }
 
     /// <summary>Writes a stub that jumps to the address stored in a GOT entry.</summary>
     public abstract void WritePltEntry(Span<byte> entry, ulong entryAddress, ulong gotEntryAddress);

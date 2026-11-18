@@ -90,6 +90,27 @@ public abstract class LinkerTestBase : IDisposable
         return Start(startInfo);
     }
 
+    /// <summary>
+    /// Starts a process, retrying while the executable is "busy". Tests run in parallel, and a process forked by
+    /// another test briefly inherits the handle through which this test wrote its executable; the kernel refuses to
+    /// execute a file that is open for writing anywhere (ETXTBSY).
+    /// </summary>
+    private static Process StartWithRetry(ProcessStartInfo startInfo)
+    {
+        const int TextFileBusy = 26;
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return Process.Start(startInfo)!;
+            }
+            catch (System.ComponentModel.Win32Exception e) when (e.NativeErrorCode == TextFileBusy && attempt < 50)
+            {
+                Thread.Sleep(20);
+            }
+        }
+    }
+
     private static string? FindOnPath(string program) =>
         (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
@@ -102,7 +123,7 @@ public abstract class LinkerTestBase : IDisposable
         startInfo.RedirectStandardError = true;
         startInfo.UseShellExecute = false;
 
-        using var process = Process.Start(startInfo)!;
+        using var process = StartWithRetry(startInfo);
         var output = process.StandardOutput.ReadToEnd();
         var error = process.StandardError.ReadToEnd();
         if (!process.WaitForExit(TimeSpan.FromSeconds(30)))
