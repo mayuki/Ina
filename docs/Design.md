@@ -14,8 +14,9 @@ Goals of the proof of concept:
 
 - Compile console applications that consist of several assemblies and use the real
   base class library (console, files, `System.Text.Json`, ...).
-- Produce Linux executables. Windows is desirable later.
-- Do not invoke or require a compiler, assembler, linker or sysroot of the target.
+- Produce Linux and Windows executables, for x64 and arm64.
+- Do not invoke or require a compiler, assembler, linker, SDK or sysroot of the target.
+  In particular, building a Windows executable must not require Windows.
 
 Explicitly out of scope for now: optimizing beyond what the borrowed compiler does,
 debuggability of the output, and breadth of platform coverage.
@@ -25,8 +26,10 @@ debuggability of the output, and breadth of platform coverage.
 ### 2.1 Where the native toolchain dependency actually is
 
 NativeAOT already compiles IL to machine code without a C compiler: ILCompiler drives
-RyuJIT and writes object files with its own object writer. What needs a toolchain is
-the last step, which calls `clang` (as a linker driver) to combine
+RyuJIT and writes object files with its own object writer, for any target on any host.
+What needs a toolchain is the last step.
+
+On Linux it calls `clang` (as a linker driver) to combine
 
 - the object file of the application,
 - the static libraries of the runtime (`libRuntime.WorkstationGC.a`, `libSystem.Native.a`, ...),
@@ -34,8 +37,18 @@ the last step, which calls `clang` (as a linker driver) to combine
 - the static part of the C library (`libc_nonshared.a`) and the compiler support library,
 - the shared C library of the *target* system, to resolve symbols and symbol versions.
 
-The last three are why cross compilation needs a sysroot, and the linker is why it needs
-a toolchain. Ina therefore keeps ILCompiler and replaces the link step with its own linker.
+On Windows it calls `link.exe` of Visual C++ to combine
+
+- the object file of the application and the static libraries of the runtime
+  (`Runtime.WorkstationGC.lib`, `aotminipal.lib`, ...),
+- the import libraries of the Windows SDK (`kernel32.lib`, `advapi32.lib`, ..., `ucrt.lib`),
+- the static C runtime of Visual C++ (`libcmt.lib`, `libvcruntime.lib`): the startup code,
+  the stack probe, the stack protection, the support for thread-local storage, `memcpy`
+  and friends.
+
+The system libraries are why cross compilation needs a sysroot or an SDK, and the linker
+is why it needs a toolchain. Ina therefore keeps ILCompiler and replaces the link step
+with its own linkers.
 
 ### 2.2 Alternatives considered
 
@@ -44,7 +57,7 @@ a toolchain. Ina therefore keeps ILCompiler and replaces the link step with its 
 | Own IL compiler, own runtime, own core library | NetWasm | Reaches independence from everything, but running the real BCL (`System.Text.Json`, the console) requires reimplementing most of ILCompiler and the runtime. Far beyond a proof of concept. |
 | Translate IL to C++ and compile that | IL2CPP, dn2cpp | Requires a C++ toolchain per target, which is exactly what must be avoided. |
 | NativeAOT plus a bundled native linker and sysroot | bflat | Works and cross compiles, but ships `lld` and target libraries as native binaries per host. Ina wants the linking logic to be managed code and the target description to be data. |
-| **ILCompiler for code, own managed linker** | **Ina** | Reuses the production compiler and runtime, and owns precisely the part that caused the dependency. |
+| **ILCompiler for code, own managed linkers** | **Ina** | Reuses the production compiler and runtime, and owns precisely the part that caused the dependency. |
 
 The trade-off of the chosen approach: Ina depends on the ILCompiler package for the host
 (a native executable published for every host .NET supports) and on the precompiled
@@ -53,13 +66,15 @@ runtime libraries of the target. Both are ordinary NuGet packages that Ina downl
 ### 2.3 Pipeline
 
 ```
-ina App.dll --os linux --arch arm64
+ina App.dll --os linux --arch arm64                 ina App.dll --os windows --arch x64
  │
- ├─ AppAssembly        reads the assembly: entry point, target framework, runtimeconfig.json
+ ├─ AppAssembly        reads the assembly: entry point, target framework, runtimeconfig.json, subsystem
  ├─ RuntimePacks       runtime.<host>.Microsoft.DotNet.ILCompiler            -> tools/ilc
  │                     Microsoft.NETCore.App.Runtime.NativeAOT.<target>      -> framework IL + static libraries
- ├─ IlcCompiler        ilc @App.ilc.rsp                                      -> App.o
+ │                     Microsoft.DotNet.ILCompiler (Windows targets only)    -> list of directly callable Windows APIs
+ ├─ IlcCompiler        ilc @App.ilc.rsp                                      -> App.o / App.obj
  └─ ElfLinker          App.o + runtime libraries + import table              -> App
+    PeLinker           App.obj + runtime libraries + import table            -> App.exe
 ```
 
 `src/Ina.Core` implements the first three steps and `src/Ina.Linker` the last one.
@@ -79,11 +94,24 @@ switches that `PublishAot` sets by default are applied, and the `configPropertie
 application's `runtimeconfig.json` override them. The compiler runs as a child process
 because the package ships it as a native executable.
 
-**Linking.** See the next section.
+The command line depends on two things besides the application:
 
-## 3. The linker
+- *The version of the compiler*, which is the version of the packs. .NET 11 renamed the
+  symbol through which diagnostic tools find the runtime (`DotNetRuntimeContractDescriptor`
+  instead of `DotNetRuntimeDebugHeader`) and gave `--stacktracedata` a value.
+- *The target system.* For Windows the compiler gets the list of Windows APIs that exist
+  on every supported version (`WindowsAPIs.txt` of the ILCompiler package); P/Invokes
+  into them become direct references that the linker binds, everything else is looked up
+  at run time. The Win32 resources of the application (version information, icon,
+  manifest) are copied into the object file, and data is not stored in the compact
+  "dehydrated" form unless the build optimizes for size. This is what the official build
+  does as well.
 
-`Ina.Linker` links ELF relocatable objects and static libraries into a dynamically linked
+**Linking.** See the next two sections.
+
+## 3. The ELF linker (Linux)
+
+`ElfLinker` links ELF relocatable objects and static libraries into a dynamically linked
 executable for x86-64 or AArch64. It is not a general purpose replacement for `ld`; it
 implements what a NativeAOT link needs, and it reports anything else as an error instead
 of producing a questionable image.
@@ -99,7 +127,10 @@ The passes are the methods called by `LinkSession.Run`, in this order:
    Sections that are not loaded at run time (debug information, comments) are dropped.
 3. **Resolve symbols.** Strong definitions override weak ones and tentative (common)
    ones; two strong definitions are an error. Archive members are loaded only when they
-   define a symbol that is still undefined, repeatedly until nothing changes.
+   define a symbol that is still undefined, repeatedly until nothing changes. Exported
+   symbols count as references here, like `-u symbol` of other linkers: since .NET 11
+   the descriptor for diagnostic tools lives in a member of the runtime library that no
+   code refers to.
 4. **C library stubs.** Functions that the shared C library does not export are added
    for names that are still undefined (see 3.3).
 5. **Linker-defined symbols.** `__init_array_start`, `_GLOBAL_OFFSET_TABLE_`,
@@ -151,7 +182,8 @@ this being right, which is what the `RuntimeTour` sample exercises.
 `src/Ina.Linker/Abi/Tables/glibc-<arch>.abi` describe the shared libraries of the target
 as text: for each library and symbol version, the exported functions, data objects and
 thread-local variables. They are generated by `eng/generate-abi.sh` from the `libc6`
-package of Ubuntu 18.04 (glibc 2.27), the oldest C library that .NET 10 supports.
+package of Ubuntu 18.04 (glibc 2.27), the C library baseline of .NET 10. The runtime
+libraries of .NET 11 link against the same baseline.
 
 Consequences:
 
@@ -187,15 +219,166 @@ from the thread pointer. The linker uses this in two ways:
 Local-dynamic offsets are relative to the result of the rewritten call, so on x86-64 the
 rewrite happens only if every local-dynamic call site in the image is canonical.
 
-### 3.6 Adding a target
+## 4. The PE linker (Windows)
 
-An architecture is a subclass of `TargetArch`: relocation scan and application, the PLT
-stub, the entry point and C library stubs as machine code, and the thread pointer offset
-formula. A C library is an import table. Another object format (PE/COFF, Mach-O) is a
-larger step: the passes of 3.1 are format-neutral in spirit, but the input model
-(`ObjectFile`, `InputSection`) and the output writer are ELF-specific today.
+`PeLinker` links COFF objects and static libraries into a PE32+ executable for x64 or
+ARM64. It lives next to the ELF linker in `src/Ina.Linker` (namespace `Ina.Linker.Pe`) and
+shares the archive reader, the import table format and the result type with it; the
+object model and the passes are its own, because the two formats resolve symbols and lay
+out images differently. Like the ELF linker it implements what a NativeAOT link needs and
+reports the rest as an error.
 
-## 4. Observability
+### 4.1 Passes
+
+The passes are the methods called by `PeLinkSession.Run`:
+
+1. **Load inputs.** Objects are parsed (`CoffObject`, regular and "bigobj" flavor);
+   libraries are indexed through their first linker member, which has the format of the
+   GNU archive index. Debug information (`.debug$*`) and the tables for Control Flow Guard
+   are dropped. The linker options that objects embed (`.drectve`) are applied:
+   `/merge`, `/alternatename`, `/include` and `/export`; requests for default libraries
+   and consistency checks between objects are ignored.
+2. **Roots.** The entry point and the exported symbols are referenced; `__ImageBase` is
+   defined.
+3. **Resolve symbols**, until nothing changes: from libraries; then from the *runtime
+   support* that the linker generates (4.3); then through alternate names. COMDAT
+   sections are selected while objects are added: the first section with a given COMDAT
+   symbol wins (or the largest one, if the selection says so), and sections that are
+   *associated* with a dropped section - the unwind data of a function - go with it.
+   A weak external resolves to its default unless something defines it.
+4. **Common symbols** get zero-initialized storage.
+5. **Bind imports.** A symbol that is still undefined becomes an import if the import
+   table knows it (4.4): `__imp_X` is the slot of the import address table that holds
+   the address of X, a plain `X` is a function that is called through a thunk.
+6. **Garbage collection.** As with the Microsoft linker, ordinary sections are always
+   kept and COMDAT sections - which is what compilers emit per function - only when
+   something refers to them. Associated sections follow their section.
+7. **Relocation scan.** Reports undefined symbols and determines which imports are used.
+8. **Import and export tables** are generated for what is used.
+9. **Layout.** Chunks are grouped into sections by the part of their name before `$`
+   and ordered by the full name, which is how the tables of the runtime line up between
+   their start and end markers (`.managedcode$A`, `$I`, `$Z`; `.CRT$XCA`, `$XCU`, `$XCZ`).
+   Sections are merged as requested (`.managedcode` and `.unbox` into `.text`, `.modules`
+   into `.rdata`, `hydrated` into `.bss`) and as every Windows linker does (`.xdata`,
+   `.CRT`, `.idata`, `.edata` into `.rdata`; `.bss` into `.data`, at its end so that it
+   takes no room in the file). The result is `.text`, `.rdata`, `.data`, `.tls`,
+   `.pdata`, `.rsrc`, `.reloc`.
+10. **Base relocations.** Every 64-bit absolute address is listed in `.reloc`, the last
+    section, so that Windows can load the image at a random address. `--no-pie` produces
+    an image without them that is bound to its preferred address.
+11. **Write.** Chunks are copied and relocations applied; the function table is sorted;
+    headers and data directories are written. The time stamp of the header is derived
+    from the content, which keeps the output reproducible.
+
+### 4.2 Function table and unwinding
+
+Windows describes every non-leaf function with an entry in the function table (`.pdata`)
+that points to its unwind information (`.xdata`). The operating system looks entries up
+with a binary search, and so does the .NET runtime, which finds the exception handling
+and GC information of a managed method behind its unwind information. The linker
+therefore concatenates the `.pdata` contributions, applies the relocations, and sorts the
+entries by address (12 bytes each on x64, 8 on ARM64). Entries of functions that were
+dropped disappear with them because their `.pdata` and `.xdata` sections are associated
+with the function.
+
+### 4.3 Replacing the pieces of the toolchain
+
+The runtime libraries are compiled for the static C runtime of Visual C++ in combination
+with the Universal C Runtime DLL. The DLL is part of Windows; the static part is not
+available without Visual C++, so the linker generates what the runtime needs from it.
+Each piece is an object that takes part in the link only when one of its symbols is
+referenced, exactly like a member of `libcmt.lib`.
+
+| A native link takes this ... | ... from | Ina |
+|---|---|---|
+| `wmainCRTStartup` | `libcmt.lib` | Generated machine code: tells the C runtime DLL what kind of program this is, lets it parse the command line, runs the C and C++ initializers (`_initterm_e`, `_initterm`), runs the dynamic initializers of thread-locals for the main thread, calls `wmain` and passes its result to `exit`. |
+| Initializer tables (`__xi_a` ... `__xc_z`) | `libcmt.lib` | Marker sections `.CRT$XIA` ... `.CRT$XCZ`; compilers put their entries in between. |
+| TLS directory (`_tls_used`), `_tls_index` | `libcmt.lib` | Generated data, see 4.5. |
+| `__dyn_tls_init`, `__dyn_tls_on_demand_init`, `__tls_guard` | `libcmt.lib` | Generated code that runs the functions between `.CRT$XDA` and `.CRT$XDZ` once per thread, registered as a TLS callback. |
+| `__chkstk` | `libcmt.lib` | Generated stack probe: touches every page of a large frame from the top down. |
+| `__security_cookie`, `__security_check_cookie` (x64), `__security_push_cookie` / `__security_pop_cookie` (ARM64), `__report_rangecheckfailure` | `libcmt.lib` | Generated. The cookie has the documented initial value, and a generated load configuration directory points at it, so Windows replaces it with a random value when it loads the image. A mismatch ends the program with `__fastfail`. |
+| `__GSHandlerCheck` | `libcmt.lib` | Generated, but simplified: it lets the unwind continue without validating the cookie of the frame. The cookie is still checked when the function returns. |
+| `__guard_check_icall_fptr`, `__guard_dispatch_icall_fptr` | `libcmt.lib` | Pointers to stubs that accept every call target, which is what an image without Control Flow Guard gets from the Microsoft linker too. |
+| `_InterlockedCompareExchange` and friends (ARM64) | `libvcruntime.lib` | Generated load-exclusive/store-exclusive loops. The compiler does not expand these inline for ARM64. |
+| `atexit`, `operator new`/`delete`, POSIX names like `open` | `libcmt.lib`, `oldnames.lib` | Aliases to functions of the C runtime DLL: `_crt_atexit`, `malloc`/`free`, `_open`. |
+| `memcpy`, `memset`, `__C_specific_handler`, `_purecall`, ... | `libvcruntime.lib` | Imported from the Universal C Runtime, which exports them too. |
+| `_fltused`, `__ImageBase` | `libcmt.lib`, the linker | An absolute symbol; a linker-defined symbol. |
+| Win32 functions | Import libraries of the Windows SDK | The import table (4.4). |
+
+The machine code is written as bytes with the assembly next to it (`PeX64Target`,
+`PeArm64Target`). Functions with a stack frame carry unwind information, so that a stack
+walk through them works.
+
+### 4.4 Import table
+
+`src/Ina.Linker/Abi/Tables/windows.abi` lists, for each system DLL that a NativeAOT
+program links against, the names it exports. It is generated by
+`eng/GenerateWindowsAbi.cs` from the export tables of the DLLs of a Windows installation;
+no SDK is involved. The same table serves both architectures.
+
+- The DLLs are those of the official link line (`advapi32`, `bcrypt`, `crypt32`,
+  `iphlpapi`, `kernel32`, `mswsock`, `ncrypt`, `normaliz`, `ole32`, `oleaut32`, `secur32`,
+  `user32`, `version`, `ws2_32`, the wait-on-address API set) in that order, which decides
+  where a name that several DLLs export is bound.
+- The Universal C Runtime is addressed through its API sets
+  (`api-ms-win-crt-runtime-l1-1-0.dll`, ...), like official binaries do. Which function
+  belongs to which API set is read from the stub DLLs that Windows ships for them.
+- `ntdll.dll` contributes its native API only (`Nt*`, `Rtl*`, ...). It also exports a
+  private copy of many C functions; binding `atexit` or `memcpy` to those would be wrong.
+  For the same reason the compiler support functions that `kernel32.dll` forwards to
+  `ntdll.dll` are left out.
+
+Windows binds imports by name without versions, so unlike with glibc there is nothing to
+pin: a function that the runtime references exists on every Windows it supports. The
+import directory lists a DLL only when something is imported from it, and the image
+depends on nothing that is not part of Windows 10: neither the Visual C++ redistributable
+nor an SDK component.
+
+Imports are bound eagerly by the loader through the import address table, which lives in
+`.rdata`. Direct calls go through thunks of 8 bytes (x64: `jmp [slot]`) or 16 bytes
+(ARM64: `adrp`/`ldr`/`br`).
+
+### 4.5 Thread-local storage
+
+Windows allocates a copy of the *TLS template* of every module for each thread and finds
+it through the TLS directory of the image. Thread-local variables live in `.tls$`
+sections; the generated runtime support contributes the markers `.tls` and `.tls$ZZZ`
+that enclose them, the directory with the bounds, the slot `_tls_index` that receives the
+index of the module, and the callback list. Compiled code - the runtime as well as the
+managed code for thread statics - addresses a variable by its offset from the start of
+the template (`SECREL` relocations), which is why `.tls` stays a section of its own. The
+linker records the strictest alignment of the template in the directory, so that the
+per-thread copies are aligned like the image.
+
+### 4.6 Not implemented
+
+- **Program database.** CodeView debug information is dropped; there is no PDB, and the
+  image has no debug directory.
+- **Control Flow Guard and CET.** The guard tables are dropped and the image is not
+  marked as compatible with shadow stacks. NativeAOT supports both configurations
+  (`ControlFlowGuard`, `CETCompat=false`); the executables simply run without these
+  mitigations.
+- **Identical code folding** (`/OPT:ICF`). The executables are nevertheless slightly
+  smaller than those of the official build, because less of the static C runtime is
+  linked.
+- **Import libraries and DLLs as output.** Members of import libraries are rejected with
+  an explanation; only executables are produced.
+- **Symbol table.** `--symbols` has no effect for Windows targets.
+
+## 5. Adding a target
+
+For the ELF linker an architecture is a subclass of `TargetArch`: relocation scan and
+application, the PLT stub, the entry point and C library stubs as machine code, and the
+thread pointer offset formula. A C library is an import table.
+
+For the PE linker an architecture is a subclass of `PeTarget`: relocation application,
+the import thunk, the format of the unwind data, and the runtime support as machine code.
+
+Another object format (Mach-O) is a third linker. The passes are format-neutral in
+spirit, but as the two existing linkers show, the input model, symbol resolution and the
+output writer are specific to a format.
+
+## 6. Observability
 
 - Every phase of the pipeline is an `Activity` of the `ActivitySource` named `Ina`
   (`ina.build`, `ina.resolve-packs`, `ina.download-package`, `ina.compile`, `ina.link`).
@@ -203,60 +386,94 @@ larger step: the passes of 3.1 are format-neutral in spirit, but the input model
   (OpenTelemetry, `dotnet-trace`) can do the same.
 - Progress, warnings from the compiler and diagnostics go through `ILogger`. The command
   line maps them to plain progress lines, `warning:` and `error:` prefixes.
-- The linker returns a `LinkResult` with counts, the dependencies and the required symbol
-  versions, from which the summary line derives the minimum C library version.
+- Both linkers return a `LinkResult` with counts, the dependencies and, for Linux, the
+  required symbol versions, from which the summary line derives the minimum C library
+  version.
 
-## 5. Testing
+## 7. Testing
 
 | Project | What it checks |
 |---|---|
-| `Ina.Linker.Tests` | Links small programs that are assembled in memory by `ElfObjectBuilder` and runs them: imports, GOT/PLT, constructors, TLS models, archives, weak and common symbols, COMDAT, garbage collection, unwind tables, image layout. AArch64 relocations are additionally checked by decoding the patched instructions, which needs no AArch64 machine. |
-| `Ina.Core.Tests` | ILCompiler arguments, application inspection, pack selection and download against an in-memory package feed. |
-| `Ina.EndToEnd.Tests` | Compiles the samples with the full pipeline, runs them and compares the output with the regular .NET runtime executing the same assembly; drives the `ina` command. Also compiles `ina` itself and uses the native tool to build an application. |
+| `Ina.Linker.Tests` | **ELF:** links small programs that are assembled in memory by `ElfObjectBuilder` and runs them: imports, GOT/PLT, constructors, TLS models, archives, weak and common symbols, COMDAT, garbage collection, unwind tables, image layout. AArch64 relocations are additionally checked by decoding the patched instructions. **PE:** the same with `CoffObjectBuilder`: imports through thunks and address slots, initializers, base relocations, TLS, the stack probe and the stack protection, libraries, COMDAT selection, weak externals and alternate names, section ordering and merging, the function table, exports, resources. The ARM64 versions of the generated runtime support are executed by `Arm64Emulator`, a small interpreter for the instructions the linker generates, which runs the linked image and stands in for the C runtime DLL. |
+| `Ina.Core.Tests` | ILCompiler arguments per target and compiler version, application inspection, pack selection and download against an in-memory package feed. |
+| `Ina.EndToEnd.Tests` | Compiles the samples with the full pipeline for Linux and for Windows, runs them and compares the output with the regular .NET runtime executing the same assembly; drives the `ina` command. Also compiles `ina` itself and uses the native tool to build an application. |
 
 The test suite does not use a native toolchain. Machine code in tests is written as bytes
 with the assembly as comments.
 
-## 6. Verification
+Tests run the executables they can: Linux executables on Linux (the linker tests also on
+Windows through WSL), arm64 Linux executables natively or under `qemu-aarch64`, x64
+Windows executables on x64 Windows. Everything else is skipped, while the tests that
+inspect the structure of an image run on every host.
+
+## 8. Verification
 
 What has been verified, and how:
 
-- `linux-x64`: all samples run natively on the development machine (Ubuntu 24.04, glibc 2.39)
-  and behave identically to the regular runtime.
+- `linux-x64`: all samples run natively and behave identically to the regular runtime
+  (Ubuntu 24.04 with glibc 2.39, .NET 10 packs). With the .NET 11 packs they were built on
+  Windows and run on Ubuntu 26.04 (glibc 2.43) under WSL, where they pass their checks.
 - `linux-arm64`: cross compiled on x64 and run under `qemu-aarch64` with the glibc 2.39
-  of Ubuntu's cross packages.
-- Self-hosting: `ina` compiled by itself builds the samples (also for arm64), and compiling
-  itself again with the native tool produces a byte-identical executable.
-- Symbol versions: the samples require at most `GLIBC_2.17` on both architectures, and a
+  of Ubuntu's cross packages (with the .NET 10 packs; with .NET 11 only built).
+- `win-x64`: all samples run on Windows 11 and behave identically to the regular runtime,
+  in every optimization mode and as a fixed-address image. The imports of `HelloWorld`
+  were compared with those of the official NativeAOT build: identical except for the
+  startup internals of the static C runtime on one side and `memcpy`, `memmove`,
+  `memset`, `_purecall` and `__C_specific_handler` (imported instead of linked
+  statically) on the other.
+- Cross compilation to Windows: the Linux-native `ina` produced `HelloWorld` and
+  `RuntimeTour` for `win-x64` on a Linux system without .NET SDK, compiler or Windows SDK
+  (Ubuntu under WSL). The executables are byte-identical to those built on Windows and
+  run there.
+- Self-hosting: `ina` compiled by itself builds the samples, for Linux and for Windows,
+  and compiling itself again with the native tool produces a byte-identical executable
+  on both systems. The native tools also download and unpack the packs themselves, which
+  exercises sockets, TLS and compression in the produced executables.
+- Symbol versions: the samples require at most `GLIBC_2.25` on both architectures, and a
   test checks that nothing newer than the 2.27 baseline is ever required.
+- .NET 10 applications are compiled with the .NET 10 packs and run on Linux and Windows.
 
 Not verified:
 
-- **Running on old distributions.** The executables bind only to symbols of glibc 2.27,
-  but they have not been executed on a system with such an old glibc.
-- **Hosts other than linux-x64.** Nothing in Ina is host-specific apart from choosing the
-  ILCompiler package, but building on Windows, macOS or arm64 Linux has not been tried.
-- **Real arm64 hardware**, in particular kernels with 16 KiB or 64 KiB pages (the image
-  is laid out for 64 KiB).
+- **`win-arm64` at run time.** The executables link. Their headers, the function table
+  and the unwind data of the generated functions were inspected with the tools of
+  Visual C++, the generated code was disassembled and runs in the emulator of the tests,
+  and the imports were checked against the arm64 import libraries of the Windows SDK
+  (except for the five functions that come from the Universal C Runtime instead of the
+  static C runtime). No executable has been started on Windows on ARM64.
+- **Older Windows versions.** The executables were run on Windows 11 only. The import
+  table was generated from the DLLs of Windows 11; the runtime only references functions
+  that exist on Windows 10, but this has not been tested.
+- **Running on old Linux distributions.** The executables bind only to symbols of glibc
+  2.27, but they have not been executed on a system with such an old glibc.
+- **Hosts other than linux-x64 and win-x64.** Nothing in Ina is host-specific apart from
+  choosing the ILCompiler package, but building on macOS or arm64 has not been tried.
+- **Real arm64 hardware**, in particular Linux kernels with 16 KiB or 64 KiB pages (the
+  image is laid out for 64 KiB).
+- **Graphical Windows applications.** The subsystem is taken from the application, but
+  no application with a user interface has been compiled; the shared frameworks that
+  such applications use are not supported yet.
 - **Integrity of downloaded packs.** Packages are fetched over HTTPS from nuget.org; their
   signatures are not validated.
 
-## 7. Roadmap
+## 9. Roadmap
 
 Roughly in order of expected value:
 
-1. **Windows targets.** ILCompiler can emit COFF objects on any host, so this is a second
-   linker back end: PE/COFF writer, import tables for the Windows DLLs (by name, no import
-   libraries needed), and replacements for the pieces of the MSVC runtime that are linked
-   statically (startup, security cookie, exception handler registration).
+1. **Windows on ARM64 on real hardware**, and the Windows mitigations that need the
+   linker: the Control Flow Guard tables, the CET marker, a `__GSHandlerCheck` that
+   validates the cookie.
 2. **Fully static Linux executables** against musl, for scratch containers. The linker
    already resolves everything statically except the C library; this needs the musl
    runtime pack and musl's `libc.a` as an input.
 3. **`dotnet publish` integration**: an MSBuild package that replaces the `LinkNative`
-   step of the NativeAOT targets with Ina's linker, for projects that prefer
+   step of the NativeAOT targets with Ina's linkers, for projects that prefer
    `dotnet publish -r linux-arm64` over a separate command.
-4. **Debug information**: pass the DWARF sections through and emit a symbol file.
+4. **Debug information**: pass the DWARF sections through and emit a symbol file; write a
+   PDB for Windows.
 5. **Hosting ILCompiler in-process**, which would remove the child process and allow
    writing the executable without an intermediate object file.
-6. Smaller items: satellite assemblies, native libraries of NuGet packages, `DT_RELR`
-   packed relocations, deduplication of identical CIEs, validation of package signatures.
+6. **macOS targets**: a Mach-O linker.
+7. Smaller items: satellite assemblies, native libraries of NuGet packages, `DT_RELR`
+   packed relocations, deduplication of identical CIEs, identical code folding for
+   Windows, validation of package signatures.

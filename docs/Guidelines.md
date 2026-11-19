@@ -13,10 +13,11 @@ Projects live in `src` and `tests` under the repository root.
 	- src
 		- Ina (the `ina` command line tool)
 		- Ina.Core (the build pipeline: packs, ILCompiler driver, link step)
-		- Ina.Linker (the managed ELF linker)
+		- Ina.Linker (the managed linkers: ELF for Linux, PE for Windows)
 	- tests
 		- Ina.Linker.Tests
 		- Ina.Core.Tests
+		- Ina.EndToEnd.Tests
 
 ## Project rules
 - Keep the tree in a state where it always builds, runs and can be checked
