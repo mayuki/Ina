@@ -6,9 +6,14 @@ name: CI
 # what dotnet publish produces for Windows on Linux, which is run on Windows as well.
 
 on:
+  # A change that touches only Markdown files does not run the checks.
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
   workflow_dispatch:
   # Called by release.yaml, which publishes only what passes the same checks.
   workflow_call:
