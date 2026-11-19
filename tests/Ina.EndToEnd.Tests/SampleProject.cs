@@ -83,6 +83,9 @@ internal sealed class SampleProject : IDisposable
     /// <summary>The native executable in the publish directory.</summary>
     public string Executable => Path.Combine(PublishDirectory, Path.GetFileNameWithoutExtension(ProjectFile));
 
+    /// <summary>The native executable in the publish directory when it was published for Windows.</summary>
+    public string WindowsExecutable => Executable + ".exe";
+
     /// <summary>Runs <c>dotnet publish</c> for the project, with the output going to <see cref="PublishDirectory"/>.</summary>
     public Task<ProcessResult> PublishAsync(params string[] arguments) =>
         TestEnvironment.RunAsync("dotnet", _environment.CommandLineEnvironment, ["publish", ProjectFile, "-o", PublishDirectory, .. arguments]);

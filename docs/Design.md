@@ -643,13 +643,14 @@ into a private property because a value given on the command line cannot be rewr
 ### 6.3 What is replaced
 
 `Ina.Sdk.NativeLink.targets` is imported when `PublishIna` is on and the NativeAOT targets
-are present. It redefines two targets of `Microsoft.NETCore.Native.Unix.targets` and
-`Microsoft.NETCore.Native.targets`:
+are present. It redefines two targets of `Microsoft.NETCore.Native.targets` and of the
+flavor for the target system, `Microsoft.NETCore.Native.Unix.targets` or
+`Microsoft.NETCore.Native.Windows.targets`:
 
 | Target | Original | Replacement |
 |---|---|---|
-| `SetupOSSpecificProps` | Selects the runtime libraries to link and the P/Invokes to bind directly; looks for clang or gcc and `objcopy` and fails without them | Selects the same libraries for an executable that is linked dynamically against the system libraries only; looks for nothing |
-| `LinkNative` | Runs clang as the linker driver, then `objcopy` to split off the debug information (for macOS: `dsymutil` and `strip`) | Runs the `InaLink` task |
+| `SetupOSSpecificProps` | Selects the runtime libraries to link and the P/Invokes to bind directly; looks for clang or gcc and `objcopy`, or for Visual Studio with `link.exe` and the Windows SDK, and fails without them | Selects the same libraries for an executable that is linked dynamically against the system libraries only; looks for nothing |
+| `LinkNative` | Runs clang as the linker driver, then `objcopy` to split off the debug information (for macOS: `dsymutil` and `strip`); runs `link.exe` for Windows | Runs the `InaLink` task |
 
 Everything before (`IlcCompile` and what it depends on) and after (`ComputeLinkedFilesToPublish`,
 `CopyNativeBinary`) is the original. Two properties are set on top: `NativeDebugSymbols`
@@ -661,7 +662,7 @@ to target another operating system for want of a linker.
 order, the runtime identifier, and the exports file in which ILCompiler names the symbols
 that stay visible, e.g. `DotNetRuntimeDebugHeader`. The runtime identifier selects the
 linker and its import table: ELF and glibc for Linux, Mach-O and the system libraries of
-macOS. The task runs inside MSBuild; the package brings `Ina.Linker.dll` along.
+macOS, PE and the system DLLs of Windows. The task runs inside MSBuild; the package brings `Ina.Linker.dll` along.
 `Runtime="NET"` on its registration lets an MSBuild that runs on .NET Framework start the
 task in a .NET process.
 
@@ -681,6 +682,37 @@ what differs between them is left in these targets:
 - A macOS executable is always position independent, so `PositionIndependentExecutable=false`
   is rejected for these targets (6.4).
 
+**Windows.** `SetupOSSpecificProps` has the same job, with what the Windows flavor lists:
+
+- The runtime libraries are those of the original, in its order; only two native parts of
+  the framework are left (globalization and compression), because on Windows most of the
+  platform abstraction is managed code that calls the system directly. The import libraries
+  of the Windows SDK (`SdkNativeLibrary`) are not needed: the import table (5.4) takes their
+  place.
+- The original also tells ILCompiler which Windows APIs exist on every supported version
+  (`DirectPInvokeList`, `WindowsAPIs.txt`), so that P/Invokes into them become direct
+  references that the linker binds. That needs no toolchain and is kept; the list is found
+  next to the NativeAOT targets, which `ILCompilerTargetsPath` points into.
+
+`LinkNative` hands the task what the original passes to `link.exe` besides the inputs:
+the entry point (`EntryPointSymbol`, `/ENTRY`), the subsystem (`LinkerSubsystem`, which
+follows from `OutputType`, `/SUBSYSTEM`), the stack size (`IlcDefaultStackSize`, `/STACK`)
+and the sections to merge (`/MERGE:.managedcode=.text /MERGE:hydrated=.bss`, unless
+`IlcMergeSections=false`). The exports file is a module-definition file (`/DEF`), of which
+`ModuleDefinitionFile` reads the `EXPORTS` statement; renaming a symbol or exporting it by
+ordinal cannot be honored and is reported. Some settings mean something else than for the
+original:
+
+- `PositionIndependentExecutable=false` produces an image without base relocations, which
+  is bound to its preferred address, as `--no-pie` of the `ina` command does. The original
+  ignores the property for Windows.
+- `StripSymbols` has no meaning, as for the original: Windows executables carry no symbol
+  table, and there is no program database (5.6).
+- `ControlFlowGuard=Guard` is rejected, because the linker drops the tables that the
+  compiler writes for it (5.6) and the executable would silently not be protected.
+  `CETCompat` is not looked at: the image is never marked as compatible with shadow stacks,
+  which is what `CETCompat=false` asks for.
+
 **Incremental builds.** MSBuild skips a target whose outputs are newer than its inputs,
 and the options of a link are not files. The target `_InaWriteLinkOptions` writes them
 down, next to the response file of ILCompiler, as `obj/.../native/<App>.ina.rsp`, and only
@@ -690,8 +722,10 @@ recompiling; the file also shows what exactly was linked.
 **Coupling.** The replacement depends on names inside the NativeAOT targets that are not
 a documented interface: the two targets, `LinkNativeDependsOn`,
 `IlcDynamicBuildPropertyDependencies`, the properties `NativeObject`, `NativeBinary`,
-`ExportsFile`, `IlcSdkPath`, `IlcFrameworkNativePath`, `ILCompilerTargetsPath`, and the
-items `NativeLibrary` and `DirectPInvoke`; and on the import hooks of the .NET SDK. These
+`ExportsFile`, `IlcSdkPath`, `IlcFrameworkNativePath`, `ILCompilerTargetsPath`, and for
+Windows `EntryPointSymbol`, `LinkerSubsystem`, `IlcDefaultStackSize`, `IlcMergeSections`
+and the place of `WindowsAPIs.txt`; the items `NativeLibrary`, `DirectPInvoke` and
+`DirectPInvokeList`; and on the import hooks of the .NET SDK. These
 have been stable for several releases, but a new version of .NET can change them, and it
 can add a runtime library that then has to be added to the list here as well (the `ina`
 command has a list of its own in `BuildPipeline`). The publish tests run against the
@@ -710,7 +744,7 @@ not imported; there the check only runs before the publish steps.)
 |---|---|---|
 | INA1001 | targets | `PublishIna` without `PublishAot` (package reference), or together with `PublishAot=false` |
 | INA1002 | targets, task | The runtime identifier is missing or not supported |
-| INA1003 | targets | A setting that needs what Ina does not produce or link: `NativeLib`, `CustomNativeMain`, `StaticExecutable`, `StaticICULinking`, `StaticOpenSslLinking`, `LinkStandardCPlusPlusLibrary`, `UseSystemZlib`, `UseSystemBrotli`, and for macOS `PositionIndependentExecutable=false` |
+| INA1003 | targets, task | A setting that needs what Ina does not produce or link: `NativeLib`, `CustomNativeMain`, `StaticExecutable`, `StaticICULinking`, `StaticOpenSslLinking`, `LinkStandardCPlusPlusLibrary`, `UseSystemZlib`, `UseSystemBrotli`; for macOS `PositionIndependentExecutable=false`; for Windows `ControlFlowGuard=Guard` and a `LinkerSubsystem` other than `CONSOLE` or `WINDOWS`. The task reports a subsystem, stack size or merged section that it cannot read |
 | INA1004 | targets | The application targets a framework before .NET 10 |
 | INA1005 | targets (warning) | `LinkerArg` items are ignored, since no native linker runs |
 | INA2001 | task | The link failed, e.g. because of an undefined symbol |
@@ -726,7 +760,7 @@ not imported; there the check only runs before the publish steps.)
 | Settings | Options of the command | MSBuild properties of NativeAOT |
 | Shared frameworks, satellite assemblies, static libraries | No | Yes |
 | Runs with | The .NET runtime, or stand-alone when `ina` is compiled with itself | The .NET SDK |
-| Targets | Linux, macOS and Windows | Linux and macOS; a Windows runtime identifier is rejected (INA1002) until the Windows flavor of the NativeAOT targets is replaced as well |
+| Targets | Linux, macOS and Windows | Linux, macOS and Windows |
 
 ## 7. Adding a target
 
@@ -771,8 +805,8 @@ and outputs of a link, the archive reader and the import tables.
 |---|---|
 | `Ina.Linker.Tests` | Links small programs that are assembled in memory and runs them. **ELF** (`ElfObjectBuilder`): imports, GOT/PLT, constructors, TLS models, archives, weak and common symbols, COMDAT, garbage collection, unwind tables, image layout. **Mach-O** (`MachObjectBuilder`): imports, GOT and stubs, constructors, thread-local variables, archives, weak and common symbols, dead stripping, unwind tables, image layout; the system unwinder walks a real stack through frames described by compact encodings and by DWARF. **PE** (`CoffObjectBuilder`): imports through thunks and address slots, initializers, base relocations, TLS, the stack probe and the stack protection, libraries, COMDAT selection, weak externals and alternate names, section ordering and merging, the function table, exports, resources. The images are also read back the way a loader does (`ElfImage`, `MachOImage`: load commands, fixup programs, export trie, unwind table, code signature; `PeImage`), and relocations are checked by decoding the patched instructions, so that everything but the execution is tested on every host. The ARM64 versions of the runtime support that the PE linker generates are executed by `Arm64Emulator`, a small interpreter for the instructions the linker generates, which runs the linked image and stands in for the C runtime DLL. |
 | `Ina.Core.Tests` | Targets, ILCompiler arguments per target and compiler version, application inspection, pack selection and download against an in-memory package feed. |
-| `Ina.Sdk.Tests` | The link task with a recording build engine: linking objects that are assembled in memory for both object formats it supports, the options, the exports file in its two forms, and the errors it reports. |
-| `Ina.EndToEnd.Tests` | Compiles the samples with the full pipeline for Linux, macOS and Windows, runs them where the host can and compares the output with the regular .NET runtime executing the same assembly; drives the `ina` command. Also compiles `ina` itself and uses the native tool to build an application. The publish tests copy a sample, add Ina to its project file the way a user would, and run `dotnet publish` for Linux and for macOS. |
+| `Ina.Sdk.Tests` | The link task with a recording build engine: linking objects that are assembled in memory for the three object formats, the options, the exports file in its three forms, and the errors it reports. |
+| `Ina.EndToEnd.Tests` | Compiles the samples with the full pipeline for Linux, macOS and Windows, runs them where the host can and compares the output with the regular .NET runtime executing the same assembly; drives the `ina` command. Also compiles `ina` itself and uses the native tool to build an application. The publish tests copy a sample, add Ina to its project file the way a user would, and run `dotnet publish` for Linux, macOS and Windows. |
 
 The test suite does not use a native toolchain. Machine code in tests is written as bytes
 with the assembly as comments.
@@ -851,6 +885,17 @@ What has been verified, and how:
   `NativeLibrary` with `DirectPInvoke` (a C library built with gcc); satellite resource
   assemblies; the web API template of the .NET SDK (`dotnet new webapiaot`); `ina` itself;
   the version of the SDK in `global.json`.
+- `dotnet publish` for Windows, by tests on a `linux-x64` host with the .NET SDK 11.0.100:
+  `-r win-x64` and `-r win-arm64` as a project SDK; the samples including the project
+  reference with a content file and the ASP.NET Core minimal API; the runtime libraries for
+  server GC, `EventSourceSupport` and `OptimizationPreference=Speed`; a graphical
+  application (`OutputType=WinExe`); relinking after a changed link option; the errors of
+  6.4. The tests read the images back: machine, subsystem, relocatability and exports.
+  `HelloWorld` published for either architecture has the same sections with the same
+  characteristics, the same header flags and stack size, and the same imports as the
+  executable that the `ina` command builds from the same assembly. Publishing the ASP.NET
+  Core sample found that the PE linker misread the section numbers of objects with more
+  than 32767 sections (5.1), which the `ina` command never produced.
 
 macOS was verified with the .NET 10 packs and the .NET SDK 10.0.400, before the update to
 .NET 11. What is known about macOS with .NET 11 follows after this list.
@@ -944,6 +989,10 @@ Not verified:
   binds for macOS 12, which has not been compared with what Apple's linker does for
   macOS 14. The continuous integration has no Mac, so macOS executables are run when
   somebody runs the suite on one.
+- **`dotnet publish` for Windows at run time.** Nothing that was published for Windows has
+  been started yet. The tests that run the executables need a Windows machine of their
+  architecture, which the continuous integration has for x64 (and for arm64 when opted in);
+  publishing on a Windows host has not been tried either.
 - **`win-arm64` at run time.** The executables link. Their headers, the function table
   and the unwind data of the generated functions were inspected with the tools of
   Visual C++, the generated code was disassembled and runs in the emulator of the tests,
@@ -995,16 +1044,13 @@ Roughly in order of expected value:
 3. **Fully static Linux executables** against musl, for scratch containers. The linker
    already resolves everything statically except the C library; this needs the musl
    runtime pack and musl's `libc.a` as an input.
-4. **Windows targets with `dotnet publish`**: the link task and the replaced targets
-   cover the Linux and macOS targets. The PE linker can take the place of `link.exe` in
-   the Windows flavor of the NativeAOT targets in the same way.
-5. **Debug information**: pass the DWARF sections through and emit a symbol file (a dSYM
+4. **Debug information**: pass the DWARF sections through and emit a symbol file (a dSYM
    bundle for macOS); write a PDB for Windows. With `dotnet publish` this is what
    `StripSymbols` and the `.dbg` file of NativeAOT stand for.
-6. **Native libraries as output** (`NativeLib`), which `dotnet publish` could then accept.
-7. **Hosting ILCompiler in-process**, which would remove the child process and allow
+5. **Native libraries as output** (`NativeLib`), which `dotnet publish` could then accept.
+6. **Hosting ILCompiler in-process**, which would remove the child process and allow
    writing the executable without an intermediate object file.
-8. Smaller items: satellite assemblies and native libraries of NuGet packages for the
+7. Smaller items: satellite assemblies and native libraries of NuGet packages for the
    `ina` command, `DT_RELR` packed relocations, deduplication of identical CIEs, identical
    code folding for Windows, validation of package signatures, one description of the
    runtime libraries to link for both front ends. For macOS: universal binaries (both

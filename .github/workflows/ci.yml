@@ -2,7 +2,8 @@ name: CI
 
 # Builds and tests on machines of their own for every system that Ina is developed on or builds for. Besides the
 # test suite, it checks the property the project is about across machines: executables for Windows that were
-# built on Linux run on Windows, and are the same bytes that a build on Windows produces.
+# built on Linux run on Windows, and are the same bytes that a build on Windows produces. The same holds for
+# what dotnet publish produces for Windows on Linux, which is run on Windows as well.
 
 on:
   push:
@@ -84,6 +85,16 @@ jobs:
               dotnet src/Ina/$OUTPUT/ina.dll out/il/$app/$app.dll --os windows --arch $arch -o out/win-$arch/$app.exe
             done
           done
+      # Ina.Sdk straight from the source tree, see "Trying Ina.Sdk without packaging it" in README.md.
+      - name: Publish the samples for Windows
+        run: |
+          set -euo pipefail
+          for app in RuntimeTour MinimalApi; do
+            for arch in x64 arm64; do
+              dotnet publish samples/$app -r win-$arch -o out/publish/win-$arch/$app -p:PublishIna=true -p:NuGetAudit=false \
+                -p:CustomAfterMicrosoftCommonProps=$PWD/src/Ina.Sdk/Sdk/Sdk.props -p:InaTasksAssembly=$PWD/src/Ina.Sdk/$OUTPUT/Ina.Sdk.dll
+            done
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: windows-executables-built-on-linux
@@ -111,6 +122,13 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $hello -ne "Hello, World!|Arguments: built, on, linux") { throw "HelloWorld: exit code $LASTEXITCODE, output '$hello'" }
           & out/win-x64/RuntimeTour.exe
           if ($LASTEXITCODE -ne 0) { throw "RuntimeTour: exit code $LASTEXITCODE" }
+      - name: Run the executables that dotnet publish produced on Linux
+        shell: pwsh
+        run: |
+          foreach ($app in "RuntimeTour", "MinimalApi") {
+            & "out/publish/win-x64/$app/$app.exe"
+            if ($LASTEXITCODE -ne 0) { throw "$app published for win-x64: exit code $LASTEXITCODE" }
+          }
       - name: Build the same assemblies on Windows and compare
         shell: pwsh
         run: |
@@ -144,3 +162,10 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $hello -ne "Hello, World!|Arguments: built, on, linux") { throw "HelloWorld: exit code $LASTEXITCODE, output '$hello'" }
           & out/win-arm64/RuntimeTour.exe
           if ($LASTEXITCODE -ne 0) { throw "RuntimeTour: exit code $LASTEXITCODE" }
+      - name: Run the executables that dotnet publish produced on Linux
+        shell: pwsh
+        run: |
+          foreach ($app in "RuntimeTour", "MinimalApi") {
+            & "out/publish/win-arm64/$app/$app.exe"
+            if ($LASTEXITCODE -ne 0) { throw "$app published for win-arm64: exit code $LASTEXITCODE" }
+          }

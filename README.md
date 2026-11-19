@@ -14,8 +14,7 @@ $ dotnet publish -r linux-arm64        # a project with <PublishIna>true</Publis
   App -> /work/App/bin/Release/net11.0/linux-arm64/publish/
 ```
 
-and it is a command of its own for an assembly that is already built, which also builds
-for Windows:
+and it is a command of its own for an assembly that is already built:
 
 ```console
 $ dotnet build -c Release samples/HelloWorld
@@ -65,8 +64,7 @@ App.exe  (Windows: PE32+, importing system DLLs and the Universal C Runtime only
 
 With `dotnet publish`, steps 1 and 2 are those of the .NET SDK: NuGet restores the packs
 and the NativeAOT targets run ILCompiler. With the `ina` command, Ina does them itself.
-Step 3 is the same linker in both cases; `dotnet publish` uses it for the Linux and macOS
-targets so far.
+Step 3 is the same linker in both cases.
 
 The linkers do not need the libraries of the target system either. They link against an
 *import table*: the names of the symbols that the system libraries export, generated once
@@ -124,6 +122,7 @@ refers to it and sets `PublishIna`:
 $ dotnet publish                       # for this machine
 $ dotnet publish -r linux-arm64        # for another architecture
 $ dotnet publish -r osx-arm64          # for another operating system
+$ dotnet publish -r win-x64            # for Windows, without Visual Studio, also on Linux or a Mac
 ```
 
 The publish directory contains the executable and the content files of the project, as
@@ -159,15 +158,19 @@ What differs from a NativeAOT publish, apart from not needing a toolchain:
 
 | Setting | With `PublishIna` |
 |---|---|
-| `RuntimeIdentifier` (`-r`) | `linux-x64`, `linux-arm64`, `osx-x64` or `osx-arm64`, independent of the machine that publishes. Anything else, including the Windows targets of the `ina` command, is an error (INA1002). The Linux targets are tested on a `linux-x64` host, the macOS targets were tested on an `osx-arm64` and a `linux-arm64` host with .NET 10; [Verification](docs/Design.md#10-verification) lists the combinations that were only built or not tried |
-| `PositionIndependentExecutable` | `false` produces a fixed-address executable for Linux. macOS has none, so there it is an error (INA1003) |
-| `StripSymbols` | `false` keeps the symbol table. There is no debug information, and no `.dbg` file or `.dSYM` bundle yet |
-| `NativeLibrary`, `DirectPInvoke` | Static libraries are linked into the executable, as long as they need nothing but what the import table of the target lists: the C library, and for macOS the frameworks that the .NET runtime itself uses |
+| `RuntimeIdentifier` (`-r`) | `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`, `win-x64` or `win-arm64`, independent of the machine that publishes. Anything else is an error (INA1002). The Linux targets are tested on a `linux-x64` host, the macOS targets were tested on an `osx-arm64` and a `linux-arm64` host with .NET 10, the Windows targets were published on a `linux-x64` host; [Verification](docs/Design.md#10-verification) lists the combinations that were only built or not tried |
+| `PositionIndependentExecutable` | `false` produces a fixed-address executable for Linux, and for Windows one without base relocations. macOS has none, so there it is an error (INA1003) |
+| `StripSymbols` | `false` keeps the symbol table of Linux and macOS executables. There is no debug information, and no `.dbg` file, `.dSYM` bundle or `.pdb` file yet |
+| `NativeLibrary`, `DirectPInvoke` | Static libraries are linked into the executable, as long as they need nothing but what the import table of the target lists: the C library, for macOS the frameworks that the .NET runtime itself uses, for Windows the system DLLs that it uses and the Universal C Runtime |
+| `OutputType`, `LinkerSubsystem`, `IlcDefaultStackSize` | Honored for Windows: `WinExe` produces a graphical application. A subsystem other than `CONSOLE` or `WINDOWS`, or one with a version, is an error (INA1003) |
+| `ControlFlowGuard`, `CETCompat` | The linker does not write the tables of Control Flow Guard, so `Guard` is an error (INA1003). Executables are not marked as compatible with CET shadow stacks, whatever `CETCompat` says |
 | `LinkerArg` | Ignored with a warning (INA1005): no native linker runs |
 | `NativeLib`, `CustomNativeMain`, `StaticExecutable`, `StaticICULinking`, `StaticOpenSslLinking`, `LinkStandardCPlusPlusLibrary`, `UseSystemZlib`, `UseSystemBrotli` | Not supported (error INA1003) |
 
 A macOS executable is signed ad hoc by the linker, like the ones of the `ina` command, so
-it runs on the Mac it is copied to without further steps.
+it runs on the Mac it is copied to without further steps. A Windows executable depends on
+nothing but DLLs that are part of Windows, whichever system it was published on: publishing
+for Windows needs neither Visual Studio nor the Windows SDK.
 
 `Ina.Sdk` is not on nuget.org. To try it, pack it and add the folder as a package source:
 
@@ -242,7 +245,7 @@ such as ASP.NET Core are published with `dotnet publish`.
 
 | | |
 |---|---|
-| Targets | `linux-x64`, `linux-arm64` (glibc), position independent or fixed-address executables; `osx-x64`, `osx-arm64` (macOS 12 and later with .NET 10, macOS 14 and later with .NET 11); with the `ina` command also `win-x64`, `win-arm64` (Windows 10 and later), relocatable or fixed-address executables |
+| Targets | `linux-x64`, `linux-arm64` (glibc), position independent or fixed-address executables; `osx-x64`, `osx-arm64` (macOS 12 and later with .NET 10, macOS 14 and later with .NET 11); `win-x64`, `win-arm64` (Windows 10 and later), relocatable or fixed-address executables |
 | Hosts | Anywhere ILCompiler runs. Developed and tested on `linux-x64`, `win-x64` and `osx-arm64`, and before the update to .NET 11 on `linux-arm64` |
 | Frameworks | Applications that target .NET 10 or .NET 11; each is compiled with the packs of its own version. The tool and the SDK themselves run on .NET 11 |
 | Verified | Console apps, multi-assembly apps, `System.Text.Json`, exceptions, GC (workstation and server), threads and tasks, thread statics, file I/O, sockets, HTTPS, compression, crypto (OpenSSL on Linux, Apple's frameworks on macOS, the system providers on Windows). With `dotnet publish` also an ASP.NET Core minimal API |
@@ -266,8 +269,10 @@ Not done yet:
 - **Running `win-arm64` executables.** They are linked, checked structurally and their
   generated code is executed in an emulator by the tests, but no Windows on ARM64 machine
   was available
-- **Windows targets with `dotnet publish`.** `PublishIna` accepts the Linux and macOS
-  targets; for Windows use the `ina` command
+- **Running what `dotnet publish` produced for Windows.** The executables are published on
+  Linux, inspected, and match what the `ina` command produces in their sections and imports.
+  The tests that run them need a Windows machine, such as those of the continuous
+  integration, and have not been run on one yet
 - Fully static musl executables, universal (fat) macOS binaries
 - Debug information: the compiler's DWARF output is dropped for Linux and macOS (no dSYM),
   and no program database (PDB) is written for Windows
@@ -300,7 +305,7 @@ Verification gaps are listed in [docs/Design.md](docs/Design.md#10-verification)
 
 ```console
 $ dotnet build
-$ dotnet test          # ~430 tests, about two minutes
+$ dotnet test          # ~470 tests, about two minutes
 ```
 
 The tests do not use a native toolchain: object files are assembled in memory by test
@@ -323,7 +328,8 @@ ILCompiler and runtime packs, and the runtime pack of ASP.NET Core.
 
 `.github/workflows/ci.yml` runs the test suite on Linux and Windows machines of GitHub. It
 also builds the samples for Windows on Linux, runs them on Windows, and checks that a build
-of the same assemblies on Windows yields the same bytes. The jobs on arm64 machines, which
+of the same assemblies on Windows yields the same bytes; samples published for Windows with
+`dotnet publish` on Linux are run on Windows as well. The jobs on arm64 machines, which
 include running `win-arm64` executables, are enabled for public repositories; a private
 repository opts in with the repository variable `ARM64_RUNNERS=true`. No job runs on a Mac:
 macOS executables are built and inspected on the Linux and Windows machines, not run.
@@ -346,7 +352,9 @@ $ samples/MinimalApi/bin/Release/net11.0/linux-x64/publish/MinimalApi
 
 No file has to be changed for this, and the output goes to the `bin` and `obj` directories
 of the sample, which Git ignores. Build `src/Ina.Sdk` again after a change to the linker
-or the task.
+or the task, and stop the build nodes that MSBuild keeps running (`dotnet build-server
+shutdown`, or `MSBUILDDISABLENODEREUSE=1` from the start): a node that ran the task
+before keeps using the copy of the linker it loaded then.
 
 A project outside of the repository does the same in its project file:
 

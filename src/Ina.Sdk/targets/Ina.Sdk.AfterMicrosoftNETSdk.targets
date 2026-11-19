@@ -5,12 +5,14 @@
 
   <PropertyGroup>
     <!-- Keep in sync with SupportedTargets in the task assembly. -->
-    <_InaSupportedRuntimeIdentifiers>linux-x64, linux-arm64, osx-x64, osx-arm64</_InaSupportedRuntimeIdentifiers>
-    <_InaRuntimeIdentifierIsSupported>false</_InaRuntimeIdentifierIsSupported>
-    <_InaRuntimeIdentifierIsSupported Condition="'$(RuntimeIdentifier)' == 'linux-x64' or '$(RuntimeIdentifier)' == 'linux-arm64'">true</_InaRuntimeIdentifierIsSupported>
-    <_InaRuntimeIdentifierIsSupported Condition="'$(RuntimeIdentifier)' == 'osx-x64' or '$(RuntimeIdentifier)' == 'osx-arm64'">true</_InaRuntimeIdentifierIsSupported>
+    <_InaSupportedRuntimeIdentifiers>linux-x64, linux-arm64, osx-x64, osx-arm64, win-x64, win-arm64</_InaSupportedRuntimeIdentifiers>
     <_InaTargetsMacOS>false</_InaTargetsMacOS>
     <_InaTargetsMacOS Condition="'$(RuntimeIdentifier)' == 'osx-x64' or '$(RuntimeIdentifier)' == 'osx-arm64'">true</_InaTargetsMacOS>
+    <_InaTargetsWindows>false</_InaTargetsWindows>
+    <_InaTargetsWindows Condition="'$(RuntimeIdentifier)' == 'win-x64' or '$(RuntimeIdentifier)' == 'win-arm64'">true</_InaTargetsWindows>
+    <_InaRuntimeIdentifierIsSupported>false</_InaRuntimeIdentifierIsSupported>
+    <_InaRuntimeIdentifierIsSupported Condition="'$(RuntimeIdentifier)' == 'linux-x64' or '$(RuntimeIdentifier)' == 'linux-arm64'">true</_InaRuntimeIdentifierIsSupported>
+    <_InaRuntimeIdentifierIsSupported Condition="'$(_InaTargetsMacOS)' == 'true' or '$(_InaTargetsWindows)' == 'true'">true</_InaRuntimeIdentifierIsSupported>
   </PropertyGroup>
 
   <!--
@@ -42,6 +44,8 @@
       <_InaUnsupportedSetting Include="LinkStandardCPlusPlusLibrary=true" Condition="'$(LinkStandardCPlusPlusLibrary)' == 'true'" Reason="that library is not among the system libraries Ina links against" />
       <_InaUnsupportedSetting Include="UseSystemZlib=true" Condition="'$(UseSystemZlib)' == 'true'" Reason="that library is not among the system libraries Ina links against" />
       <_InaUnsupportedSetting Include="UseSystemBrotli=true" Condition="'$(UseSystemBrotli)' == 'true'" Reason="that library is not among the system libraries Ina links against" />
+      <_InaUnsupportedSetting Include="ControlFlowGuard=$(ControlFlowGuard)" Condition="'$(ControlFlowGuard)' == 'Guard' and '$(_InaTargetsWindows)' == 'true'" Reason="the linker does not write the tables of Control Flow Guard yet, so the executable would not be protected by it" />
+      <_InaUnsupportedSetting Include="LinkerSubsystem=$(LinkerSubsystem)" Condition="'$(LinkerSubsystem)' != '' and '$(LinkerSubsystem)' != 'CONSOLE' and '$(LinkerSubsystem)' != 'WINDOWS' and '$(_InaTargetsWindows)' == 'true'" Reason="Ina links console (CONSOLE) and graphical (WINDOWS) applications, without a version of the subsystem" />
     </ItemGroup>
 
     <Error Code="INA1003" Condition="'@(_InaUnsupportedSetting)' != ''"

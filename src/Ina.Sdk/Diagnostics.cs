@@ -9,6 +9,9 @@ internal static class Diagnostics
     /// <summary>The runtime identifier is not one Ina can produce executables for.</summary>
     public const string UnsupportedRuntimeIdentifier = "INA1002";
 
+    /// <summary>A setting asks for something that Ina does not produce, or is given in a form it does not understand.</summary>
+    public const string UnsupportedSetting = "INA1003";
+
     /// <summary>The linker rejected the inputs, e.g. because of an undefined symbol.</summary>
     public const string LinkFailed = "INA2001";
 
