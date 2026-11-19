@@ -8,12 +8,13 @@ public enum TargetOperatingSystem
 {
     Linux,
     MacOS,
+    Windows,
 }
 
 /// <summary>The platform an executable is built for.</summary>
 public sealed record TargetPlatform(TargetOperatingSystem OperatingSystem, TargetArchitecture Architecture)
 {
-    /// <summary>The .NET runtime identifier, e.g. <c>linux-x64</c> or <c>osx-arm64</c>.</summary>
+    /// <summary>The .NET runtime identifier, e.g. <c>linux-x64</c>, <c>osx-arm64</c> or <c>win-arm64</c>.</summary>
     public string RuntimeIdentifier => $"{OperatingSystemName}-{ArchitectureName}";
 
     /// <summary>
@@ -24,12 +25,13 @@ public sealed record TargetPlatform(TargetOperatingSystem OperatingSystem, Targe
     {
         TargetOperatingSystem.Linux => "linux",
         TargetOperatingSystem.MacOS => "osx",
+        TargetOperatingSystem.Windows => "win",
         _ => throw new InaException($"Unsupported target operating system: {OperatingSystem}"),
     };
 
     /// <summary>
     /// The native library of the framework that implements cryptography: on top of OpenSSL on Linux, on top of the
-    /// system frameworks on macOS.
+    /// system frameworks on macOS. On Windows the framework calls the system libraries directly.
     /// </summary>
     public string CryptographyLibrary => OperatingSystem switch
     {
@@ -37,6 +39,12 @@ public sealed record TargetPlatform(TargetOperatingSystem OperatingSystem, Targe
         TargetOperatingSystem.MacOS => "System.Security.Cryptography.Native.Apple",
         _ => throw new InaException($"Unsupported target operating system: {OperatingSystem}"),
     };
+
+    /// <summary>The extension that executables have on the target system, including the dot.</summary>
+    public string ExecutableExtension => OperatingSystem == TargetOperatingSystem.Windows ? ".exe" : string.Empty;
+
+    /// <summary>The conventional extension of object files for the target system.</summary>
+    public string ObjectExtension => OperatingSystem == TargetOperatingSystem.Windows ? ".obj" : ".o";
 
     /// <summary>The name ILCompiler uses for the architecture (<c>--targetarch</c>).</summary>
     public string ArchitectureName => Architecture switch
@@ -52,7 +60,8 @@ public sealed record TargetPlatform(TargetOperatingSystem OperatingSystem, Targe
         {
             "linux" => TargetOperatingSystem.Linux,
             "macos" or "osx" => TargetOperatingSystem.MacOS,
-            var other => throw new InaException($"Unsupported target operating system '{other}'. Supported: linux, macos."),
+            "windows" or "win" => TargetOperatingSystem.Windows,
+            var other => throw new InaException($"Unsupported target operating system '{other}'. Supported: linux, macos, windows."),
         };
 
         var arch = (architecture ?? HostArchitectureName).ToLowerInvariant() switch
@@ -81,8 +90,13 @@ public sealed record TargetPlatform(TargetOperatingSystem OperatingSystem, Targe
         }
     }
 
-    /// <summary>The default target: the operating system of this machine if Ina can target it, Linux otherwise.</summary>
-    private static string HostOperatingSystemName => System.OperatingSystem.IsMacOS() ? "macos" : "linux";
+    /// <summary>
+    /// The target that is built when none is chosen: the operating system of this machine if Ina can build for it,
+    /// and Linux otherwise.
+    /// </summary>
+    private static string HostOperatingSystemName => System.OperatingSystem.IsWindows() ? "windows"
+        : System.OperatingSystem.IsMacOS() ? "macos"
+        : "linux";
 
     private static string HostArchitectureName => RuntimeInformation.ProcessArchitecture switch
     {

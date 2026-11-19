@@ -1,0 +1,146 @@
+name: CI
+
+# Builds and tests on machines of their own for every system that Ina is developed on or builds for. Besides the
+# test suite, it checks the property the project is about across machines: executables for Windows that were
+# built on Linux run on Windows, and are the same bytes that a build on Windows produces.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # Where "dotnet build" puts the tool and the samples.
+  OUTPUT: bin/Debug/net11.0
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      # Lets the tests run the arm64 Linux executables they build, see README.md.
+      - name: Install the arm64 emulator
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y qemu-user libc6-arm64-cross
+      - run: dotnet build
+      - run: dotnet test
+
+  # GitHub provides arm64 machines to public repositories; a private repository opts in with the repository
+  # variable ARM64_RUNNERS=true when its plan includes them. This is where win-arm64 executables are run.
+  test-arm64:
+    name: Test on ${{ matrix.os }}
+    if: ${{ !github.event.repository.private || vars.ARM64_RUNNERS == 'true' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, windows-11-arm]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet build
+      - run: dotnet test
+
+  cross-build:
+    name: Build Windows executables on Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet build
+      - name: Compile the samples for Windows
+        run: |
+          set -euo pipefail
+          for app in HelloWorld RuntimeTour; do
+            # The assemblies travel with the executables, so that Windows can repeat the build from the same input.
+            mkdir -p out/il/$app
+            cp -r samples/$app/$OUTPUT/. out/il/$app/
+            for arch in x64 arm64; do
+              dotnet src/Ina/$OUTPUT/ina.dll out/il/$app/$app.dll --os windows --arch $arch -o out/win-$arch/$app.exe
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-executables-built-on-linux
+          path: out
+          retention-days: 7
+
+  cross-run:
+    name: Run them on Windows
+    needs: cross-build
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-executables-built-on-linux
+          path: out
+      - name: Run the executables that Linux built
+        shell: pwsh
+        run: |
+          $hello = (& out/win-x64/HelloWorld.exe built on linux) -join "|"
+          if ($LASTEXITCODE -ne 0 -or $hello -ne "Hello, World!|Arguments: built, on, linux") { throw "HelloWorld: exit code $LASTEXITCODE, output '$hello'" }
+          & out/win-x64/RuntimeTour.exe
+          if ($LASTEXITCODE -ne 0) { throw "RuntimeTour: exit code $LASTEXITCODE" }
+      - name: Build the same assemblies on Windows and compare
+        shell: pwsh
+        run: |
+          dotnet build src/Ina
+          if ($LASTEXITCODE -ne 0) { throw "the tool did not build" }
+          foreach ($app in "HelloWorld", "RuntimeTour") {
+            foreach ($arch in "x64", "arm64") {
+              dotnet "src/Ina/$env:OUTPUT/ina.dll" "out/il/$app/$app.dll" --os windows --arch $arch -o "rebuilt/win-$arch/$app.exe"
+              if ($LASTEXITCODE -ne 0) { throw "$app for win-$arch did not build" }
+              if ((Get-FileHash "out/win-$arch/$app.exe").Hash -ne (Get-FileHash "rebuilt/win-$arch/$app.exe").Hash) {
+                throw "$app for win-$arch differs between a build on Linux and a build on Windows"
+              }
+            }
+          }
+
+  cross-run-arm64:
+    name: Run them on Windows on ARM64
+    needs: cross-build
+    if: ${{ !github.event.repository.private || vars.ARM64_RUNNERS == 'true' }}
+    runs-on: windows-11-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-executables-built-on-linux
+          path: out
+      - name: Run the executables that Linux built
+        shell: pwsh
+        run: |
+          $hello = (& out/win-arm64/HelloWorld.exe built on linux) -join "|"
+          if ($LASTEXITCODE -ne 0 -or $hello -ne "Hello, World!|Arguments: built, on, linux") { throw "HelloWorld: exit code $LASTEXITCODE, output '$hello'" }
+          & out/win-arm64/RuntimeTour.exe
+          if ($LASTEXITCODE -ne 0) { throw "RuntimeTour: exit code $LASTEXITCODE" }

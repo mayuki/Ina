@@ -39,6 +39,24 @@ public class MachOSymbolResolutionTests : MachOLinkerTestBase
     }
 
     [Fact]
+    public void ExportedSymbolIsPulledFromAnArchiveEvenIfNothingRefersToIt()
+    {
+        // Since .NET 11 the runtime library itself holds the descriptor that diagnostic tools look for, in a member
+        // that no code references. Exporting the symbol has to load that member, like "-u symbol" does.
+        var descriptor = new MachObjectBuilder();
+        descriptor.Global("_runtime_descriptor", descriptor.Data([1, 2, 3, 4]));
+        var archive = MachArchiveBuilder.Build(withSymbolTable: true, ("descriptor.o", descriptor.Build()));
+
+        var image = Load(Link(
+            TargetArchitecture.Arm64, static o => o with { ExportedSymbols = ["runtime_descriptor", "not_defined_anywhere"] },
+            Function("_main", 0x52800000, Ret), archive)); // mov w0, #0
+
+        // An export that no input defines is not an error: older runtimes name their descriptor differently.
+        Assert.Equal(["_runtime_descriptor"], image.Exports.Keys);
+        Assert.DoesNotContain("_not_defined_anywhere", image.SymbolTable.Select(static symbol => symbol.Name));
+    }
+
+    [Fact]
     public void StrongDefinitionReplacesWeakOne()
     {
         var weak = new MachObjectBuilder();

@@ -18,8 +18,39 @@ public abstract class LinkerTestBase : IDisposable
         Directory.CreateDirectory(_directory);
     }
 
-    /// <summary>Whether binaries produced for x86-64 Linux can be executed on this machine.</summary>
-    protected static bool CanRunLinuxX64 => OperatingSystem.IsLinux() && RuntimeInformation.ProcessArchitecture == Architecture.X64;
+    /// <summary>
+    /// Whether an x86-64 Linux is at hand on a Windows machine: the Windows Subsystem for Linux with a default
+    /// distribution. Probed once, by asking it for its architecture.
+    /// </summary>
+    private static readonly Lazy<bool> WindowsSubsystemForLinux = new(static () =>
+    {
+        if (!OperatingSystem.IsWindows() || FindOnPath("wsl.exe") is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var startInfo = new ProcessStartInfo("wsl.exe") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            startInfo.ArgumentList.Add("--exec");
+            startInfo.ArgumentList.Add("uname");
+            startInfo.ArgumentList.Add("-m");
+            using var process = Process.Start(startInfo)!;
+            var machine = process.StandardOutput.ReadToEnd();
+            return process.WaitForExit(TimeSpan.FromSeconds(60)) && process.ExitCode == 0 && machine.Trim() == "x86_64";
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
+    });
+
+    /// <summary>
+    /// Whether binaries produced for x86-64 Linux can be executed on this machine: natively, or on Windows through
+    /// the Windows Subsystem for Linux.
+    /// </summary>
+    protected static bool CanRunLinuxX64 =>
+        (OperatingSystem.IsLinux() && RuntimeInformation.ProcessArchitecture == Architecture.X64) || WindowsSubsystemForLinux.Value;
 
     /// <summary>
     /// Whether binaries produced for AArch64 Linux can be executed: natively, or through user mode emulation with
@@ -70,8 +101,18 @@ public abstract class LinkerTestBase : IDisposable
     /// <summary>Runs a linked x86-64 executable and returns its exit code and standard output.</summary>
     protected static (int ExitCode, string Output) Run(string path)
     {
-        Assert.SkipUnless(CanRunLinuxX64, "Running the linked executable requires an x86-64 Linux host.");
-        return TestProcess.Run(new ProcessStartInfo(path));
+        Assert.SkipUnless(CanRunLinuxX64, "Running the linked executable requires an x86-64 Linux host, or Windows with WSL.");
+        if (!OperatingSystem.IsWindows())
+        {
+            return TestProcess.Run(new ProcessStartInfo(path));
+        }
+
+        // The Linux side sees the drives of Windows under /mnt.
+        var full = Path.GetFullPath(path);
+        var startInfo = new ProcessStartInfo("wsl.exe");
+        startInfo.ArgumentList.Add("--exec");
+        startInfo.ArgumentList.Add($"/mnt/{char.ToLowerInvariant(full[0])}{full[2..].Replace('\\', '/')}");
+        return TestProcess.Run(startInfo);
     }
 
     /// <summary>Runs a linked AArch64 executable, under emulation when the host is not AArch64.</summary>

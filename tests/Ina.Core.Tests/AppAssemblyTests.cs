@@ -17,7 +17,24 @@ public class AppAssemblyTests
 
         Assert.Equal("Ina.Core.Tests", app.Name);
         Assert.True(app.HasEntryPoint);
-        Assert.Equal(new Version(10, 0), app.FrameworkVersion);
+        Assert.Equal(new Version(11, 0), app.FrameworkVersion);
+    }
+
+    [Fact]
+    public void GraphicalApplicationIsRecognizedByItsSubsystem()
+    {
+        // OutputType=WinExe only differs from Exe in the subsystem field of the PE header, which follows the
+        // signature (4 bytes), the file header (20 bytes) and 68 bytes of the optional header.
+        using var directory = new TemporaryDirectory();
+        var image = File.ReadAllBytes(ExecutableAssembly);
+        var subsystem = BitConverter.ToInt32(image, 0x3c) + 4 + 20 + 68;
+        Assert.Equal(3, BitConverter.ToUInt16(image, subsystem)); // console
+        image[subsystem] = 2;                                     // graphical
+        var windowed = directory.Combine("Windowed.dll");
+        File.WriteAllBytes(windowed, image);
+
+        Assert.False(AppAssembly.Load(ExecutableAssembly).IsWindowsApplication);
+        Assert.True(AppAssembly.Load(windowed).IsWindowsApplication);
     }
 
     [Fact]
@@ -35,7 +52,7 @@ public class AppAssemblyTests
 
         var app = AppAssembly.Load(copy);
 
-        Assert.Equal(new Version(10, 0), app.FrameworkVersion);
+        Assert.Equal(new Version(11, 0), app.FrameworkVersion);
         Assert.Empty(app.RuntimeKnobs);
     }
 
@@ -48,8 +65,8 @@ public class AppAssemblyTests
         directory.CreateFile("App.runtimeconfig.json", """
             {
               "runtimeOptions": {
-                "tfm": "net11.0",
-                "framework": { "name": "Microsoft.NETCore.App", "version": "11.0.0-preview.3" },
+                "tfm": "net12.0",
+                "framework": { "name": "Microsoft.NETCore.App", "version": "12.0.0-preview.3" },
                 "configProperties": {
                   "System.Globalization.Invariant": true,
                   "System.GC.Server": false,
@@ -62,7 +79,7 @@ public class AppAssemblyTests
 
         var app = AppAssembly.Load(copy);
 
-        Assert.Equal(new Version(11, 0), app.FrameworkVersion);
+        Assert.Equal(new Version(12, 0), app.FrameworkVersion);
         Assert.Equal("true", app.RuntimeKnobs["System.Globalization.Invariant"]);
         Assert.Equal("false", app.RuntimeKnobs["System.GC.Server"]);
         Assert.Equal("4", app.RuntimeKnobs["System.GC.HeapCount"]);
