@@ -422,7 +422,10 @@ The passes are the methods called by `PeLinkSession.Run`:
 
 1. **Load inputs.** Objects are parsed (`CoffObject`, regular and "bigobj" flavor);
    libraries are indexed through their first linker member, which has the format of the
-   GNU archive index. Debug information (`.debug$*`) and the tables for Control Flow Guard
+   GNU archive index. The section number of a symbol is declared as a signed 16-bit field
+   in the regular flavor, but that flavor counts up to 65279 sections, and ILCompiler
+   uses it for an ASP.NET Core application with more than 32767: only the values above
+   65279 are the special negative numbers. Debug information (`.debug$*`) and the tables for Control Flow Guard
    are dropped. The linker options that objects embed (`.drectve`) are applied:
    `/merge`, `/alternatename`, `/include` and `/export`; requests for default libraries
    and consistency checks between objects are ignored.
