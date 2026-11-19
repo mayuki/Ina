@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Ina.Sdk.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Build.Utilities.Core" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ina.Sdk\Ina.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The inputs of the link task are assembled in memory with the helpers of the linker tests. -->
+    <Compile Include="..\Ina.Linker.Tests\Support\Code.cs" Link="Support\Code.cs" />
+    <Compile Include="..\Ina.Linker.Tests\Support\ElfImage.cs" Link="Support\ElfImage.cs" />
+    <Compile Include="..\Ina.Linker.Tests\Support\ElfObjectBuilder.cs" Link="Support\ElfObjectBuilder.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>
