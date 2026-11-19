@@ -7,16 +7,17 @@ Projects live in `src` and `tests` under the repository root.
 	- global.json
 	- Directory.Build.props / Directory.Packages.props
 	- dotnet-tools.json
-	- eng (engineering scripts, e.g. regenerating the C library import tables)
+	- eng (engineering scripts, e.g. regenerating the import tables of the system libraries)
 	- docs
 	- samples (applications used as end-to-end test subjects)
 	- src
 		- Ina (the `ina` command line tool)
 		- Ina.Core (the build pipeline: packs, ILCompiler driver, link step)
-		- Ina.Linker (the managed ELF linker)
+		- Ina.Linker (the managed linkers: ELF for Linux, Mach-O for macOS, and the import tables)
 	- tests
 		- Ina.Linker.Tests
 		- Ina.Core.Tests
+		- Ina.EndToEnd.Tests
 
 ## Project rules
 - Keep the tree in a state where it always builds, runs and can be checked
