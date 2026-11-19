@@ -4,6 +4,10 @@
 *without a native toolchain*: no clang, gcc, `ld`, MSVC, Xcode, SDK or sysroot of the
 target system is needed, which makes cross compilation a matter of naming the target.
 
+Using Ina, you can cross-compile native executables for a target platform that differs from the host platform, just like Go. For example, you can:
+- Build Linux executables on Windows.
+- Build Windows executables on macOS.
+
 It plugs into `dotnet publish`, where it takes the place of NativeAOT's native link:
 
 ```console
@@ -32,6 +36,7 @@ The same command builds a macOS executable, on a Mac or anywhere else:
 $ ina samples/HelloWorld/bin/Release/net11.0/HelloWorld.dll --os macos --arch arm64
 HelloWorld.dll -> /work/HelloWorld (1.3 MB, osx-arm64, .NET 11.0.0, macOS 14.0+, compile 0.9s, link 0.14s)
 ```
+
 
 > **Status: proof of concept.** Linux and macOS executables for x64 and arm64 and Windows
 > executables for x64 work, including cross compilation: from the same assemblies, a
