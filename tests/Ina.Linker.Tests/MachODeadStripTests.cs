@@ -79,6 +79,36 @@ public class MachODeadStripTests : MachOLinkerTestBase
         Assert.Equal(4UL, image.GetSection("__DATA", "__registry").Size);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ClassReferenceIsKeptOnlyForLiveCode(bool usedByMain)
+    {
+        // The compiler marks __objc_classrefs as "no dead strip", but Apple's linker keeps a reference only if
+        // live code uses it. Otherwise the image would import every class that an unused function mentions.
+        const string NSProcessInfo = "_OBJC_CLASS_$_NSProcessInfo";
+        var builder = new MachObjectBuilder();
+        var text = builder.Text(Code.Arm64(
+            0x90000008,  // user: adrp x8, reference@PAGE
+            0xf9400100,  //       ldr  x0, [x8, reference@PAGEOFF]
+            Ret,
+            0x52800540,  // other: mov w0, #42
+            Ret));
+        builder.Global(usedByMain ? "_main" : "_dead", text);
+        builder.Global(usedByMain ? "_dead" : "_main", text, value: 12);
+        var references = builder.AddSection("__DATA", "__objc_classrefs", new byte[8], MachSectionType.AttrNoDeadStrip, 3);
+        builder.Local("_OBJC_CLASSLIST_REFERENCES_$_", references);
+        builder.Pointer(references, 0, NSProcessInfo);
+        builder.Arm64(text, 0, MachRelocArm64.Page21, "_OBJC_CLASSLIST_REFERENCES_$_");
+        builder.Arm64(text, 4, MachRelocArm64.PageOff12, "_OBJC_CLASSLIST_REFERENCES_$_");
+
+        var image = Load(Link(builder.Build()));
+
+        Assert.Equal(usedByMain, image.Binds.Any(static bind => bind.SymbolName == NSProcessInfo));
+        Assert.Equal(usedByMain, image.FindSection("__DATA", "__objc_classrefs") is not null);
+        Assert.Equal(usedByMain, image.Libraries.Any(static library => library.Name.EndsWith("/Foundation", StringComparison.Ordinal)));
+    }
+
     [Fact]
     public void ObjectWithoutSubsectionsIsKeptSectionBySection()
     {

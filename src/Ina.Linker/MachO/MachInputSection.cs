@@ -60,7 +60,14 @@ internal sealed class MachInputSection
 
     public bool IsCode => (Flags & MachSectionType.AttrPureInstructions) != 0 || (SegmentName == "__TEXT" && SectionName == "__text");
 
-    public bool IsNoDeadStrip => (Flags & MachSectionType.AttrNoDeadStrip) != 0;
+    /// <summary>
+    /// Whether the content is kept although nothing refers to it. Compilers mark the references to Objective-C
+    /// classes like that too, but honoring it there would make the image import every class that an unused
+    /// function mentions. Apple's linker keeps only the class references that live code uses.
+    /// </summary>
+    public bool IsNoDeadStrip => (Flags & MachSectionType.AttrNoDeadStrip) != 0 && !IsClassReferences;
+
+    private bool IsClassReferences => SegmentName == "__DATA" && SectionName == "__objc_classrefs";
 
     public string DisplayName => $"{File.Name}:({SegmentName},{SectionName})";
 
