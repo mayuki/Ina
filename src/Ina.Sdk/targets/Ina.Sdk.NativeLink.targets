@@ -16,6 +16,7 @@
     <!-- Ina's linker does not write debug information yet, so ILCompiler does not need to generate it. -->
     <NativeDebugSymbols>false</NativeDebugSymbols>
 
+    <!-- Settable from outside, so that a build of the source tree can be tried without packaging it (see the README). -->
     <InaTasksAssembly Condition="'$(InaTasksAssembly)' == ''">$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'tasks', 'net10.0', 'Ina.Sdk.dll'))</InaTasksAssembly>
     <_InaLinkOptionsFile>$(NativeIntermediateOutputPath)$(TargetName).ina.rsp</_InaLinkOptionsFile>
   </PropertyGroup>

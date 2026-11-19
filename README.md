@@ -278,6 +278,46 @@ architecture (x64 ones also run on Apple silicon with Rosetta).
 The first run of the end-to-end tests downloads the ILCompiler and runtime packs, and
 the runtime pack of ASP.NET Core.
 
+### Trying `Ina.Sdk` without packaging it
+
+The MSBuild files in `src/Ina.Sdk` are laid out as in the package, so a project can be
+published with them straight from the source tree. Two properties take the place of the
+reference to the package: one makes MSBuild import `Sdk.props`, the other points to the
+link task in the build output instead of the `tasks` folder of the package.
+
+```console
+$ dotnet build src/Ina.Sdk
+$ dotnet publish samples/MinimalApi -r linux-x64 \
+    -p:PublishIna=true \
+    -p:CustomAfterMicrosoftCommonProps=$PWD/src/Ina.Sdk/Sdk/Sdk.props \
+    -p:InaTasksAssembly=$PWD/src/Ina.Sdk/bin/Debug/net10.0/Ina.Sdk.dll
+$ samples/MinimalApi/bin/Release/net10.0/linux-x64/publish/MinimalApi
+```
+
+No file has to be changed for this, and the output goes to the `bin` and `obj` directories
+of the sample, which Git ignores. Build `src/Ina.Sdk` again after a change to the linker
+or the task.
+
+A project outside of the repository does the same in its project file:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="/path/to/Ina/src/Ina.Sdk/Sdk/Sdk.props" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <PublishIna>true</PublishIna>
+    <InaTasksAssembly>/path/to/Ina/src/Ina.Sdk/bin/Debug/net10.0/Ina.Sdk.dll</InaTasksAssembly>
+  </PropertyGroup>
+
+</Project>
+```
+
+This leaves out how NuGet resolves the SDK and how the package is laid out. The publish
+tests cover both with the package itself.
+
 ## Third-party components
 
 Ina does not redistribute any of these; they are downloaded from nuget.org when needed.
