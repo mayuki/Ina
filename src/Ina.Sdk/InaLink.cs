@@ -20,17 +20,20 @@ public sealed class InaLink : Microsoft.Build.Utilities.Task
     [Required]
     public string OutputPath { get; set; } = string.Empty;
 
-    /// <summary>The runtime identifier the inputs were compiled for. It selects the architecture and the C library.</summary>
+    /// <summary>
+    /// The runtime identifier the inputs were compiled for. It selects the operating system, and with it the object
+    /// format and the system libraries, and the architecture.
+    /// </summary>
     [Required]
     public string RuntimeIdentifier { get; set; } = string.Empty;
 
     /// <summary>
-    /// The version script that ILCompiler writes for GNU-style linkers. Its global symbols stay visible in the
-    /// dynamic symbol table of the executable.
+    /// The file in which ILCompiler names the symbols that stay visible in the executable: a version script for
+    /// GNU-style linkers, a list of symbols for Apple's.
     /// </summary>
     public string? ExportsFile { get; set; }
 
-    /// <summary>Produce a position independent executable.</summary>
+    /// <summary>Produce a position independent executable. macOS has no other kind.</summary>
     public bool PositionIndependent { get; set; } = true;
 
     /// <summary>Keep a symbol table in the executable for debuggers and profilers.</summary>
@@ -38,7 +41,7 @@ public sealed class InaLink : Microsoft.Build.Utilities.Task
 
     public override bool Execute()
     {
-        if (SupportedTargets.Architecture(RuntimeIdentifier) is not { } architecture)
+        if (SupportedTargets.Find(RuntimeIdentifier) is not { } target)
         {
             LogError(
                 Diagnostics.UnsupportedRuntimeIdentifier,
@@ -47,7 +50,8 @@ public sealed class InaLink : Microsoft.Build.Utilities.Task
             return false;
         }
 
-        if (ReadInputs() is not { } inputs || ReadExportedSymbols() is not { } exportedSymbols)
+        var isMacOS = target.System == TargetSystem.MacOS;
+        if (ReadInputs() is not { } inputs || ReadExportedSymbols(isMacOS) is not { } exportedSymbols)
         {
             return false;
         }
@@ -56,18 +60,20 @@ public sealed class InaLink : Microsoft.Build.Utilities.Task
         LinkResult result;
         try
         {
-            result = ElfLinker.Link(
-                new LinkOptions
-                {
-                    OutputPath = Path.GetFullPath(OutputPath),
-                    Architecture = architecture,
-                    Imports = ImportLibrarySet.ForGlibc(architecture),
-                    Inputs = inputs,
-                    PositionIndependent = PositionIndependent,
-                    EmitSymbolTable = EmitSymbolTable,
-                    ExportedSymbols = exportedSymbols,
-                },
-                new TaskLogger(Log));
+            // The object format follows from the operating system. Either way the system libraries are an import
+            // table that the linker brings along, never files of the target system.
+            var options = new LinkOptions
+            {
+                OutputPath = Path.GetFullPath(OutputPath),
+                Architecture = target.Architecture,
+                Imports = isMacOS ? ImportLibrarySet.ForMacOS(target.Architecture) : ImportLibrarySet.ForGlibc(target.Architecture),
+                Inputs = inputs,
+                PositionIndependent = PositionIndependent,
+                EmitSymbolTable = EmitSymbolTable,
+                ExportedSymbols = exportedSymbols,
+            };
+            var logger = new TaskLogger(Log);
+            result = isMacOS ? MachOLinker.Link(options, logger) : ElfLinker.Link(options, logger);
         }
         catch (LinkerException e)
         {
@@ -81,11 +87,11 @@ public sealed class InaLink : Microsoft.Build.Utilities.Task
             result.ObjectCount, clock.Elapsed.TotalMilliseconds, result.ImportedSymbols.Count, result.DiscardedSectionCount,
             string.Join(", ", result.NeededLibraries));
 
-        var minimumGlibc = result.MinimumGlibcVersion is { } version ? $", glibc {version}+" : string.Empty;
+        var minimumSystem = result.MinimumSystem is { } system ? $", {system}" : string.Empty;
         Log.LogMessage(
             MessageImportance.High,
             "Linked {0} with Ina ({1:F1} MB, {2}{3})",
-            Path.GetFileName(OutputPath), result.FileSize / 1024.0 / 1024.0, RuntimeIdentifier, minimumGlibc);
+            Path.GetFileName(OutputPath), result.FileSize / 1024.0 / 1024.0, RuntimeIdentifier, minimumSystem);
         return !Log.HasLoggedErrors;
     }
 
@@ -108,7 +114,7 @@ public sealed class InaLink : Microsoft.Build.Utilities.Task
         return Log.HasLoggedErrors ? null : inputs;
     }
 
-    private IReadOnlyList<string>? ReadExportedSymbols()
+    private IReadOnlyList<string>? ReadExportedSymbols(bool isMacOS)
     {
         if (string.IsNullOrEmpty(ExportsFile))
         {
@@ -117,7 +123,8 @@ public sealed class InaLink : Microsoft.Build.Utilities.Task
 
         try
         {
-            return VersionScript.ReadGlobalSymbols(File.ReadAllText(ExportsFile));
+            var text = File.ReadAllText(ExportsFile);
+            return isMacOS ? ExportedSymbolsList.Read(text) : VersionScript.ReadGlobalSymbols(text);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException)
         {

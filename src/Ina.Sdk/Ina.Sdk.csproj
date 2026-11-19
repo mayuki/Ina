@@ -43,10 +43,14 @@
     <InternalsVisibleTo Include="Ina.Sdk.Tests" />
   </ItemGroup>
 
+  <!--
+    FinalOutputPath is what the pack target compares with the time stamp of the package. Without it a change to the
+    linker alone, which leaves the task assembly as it is, would not produce a new package.
+  -->
   <Target Name="IncludeTaskDependenciesInPackage" DependsOnTargets="ResolveReferences">
     <ItemGroup>
-      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths)" TargetPath="%(ReferenceCopyLocalPaths.DestinationSubPath)" />
-      <BuildOutputInPackage Include="$(ProjectDepsFilePath)" TargetPath="$(ProjectDepsFileName)" />
+      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths)" TargetPath="%(ReferenceCopyLocalPaths.DestinationSubPath)" FinalOutputPath="%(ReferenceCopyLocalPaths.FullPath)" />
+      <BuildOutputInPackage Include="$(ProjectDepsFilePath)" TargetPath="$(ProjectDepsFileName)" FinalOutputPath="$(ProjectDepsFilePath)" />
     </ItemGroup>
   </Target>
 

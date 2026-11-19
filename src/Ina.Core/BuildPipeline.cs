@@ -53,10 +53,10 @@ public sealed record BuildResult(
 public sealed class BuildPipeline(PackageStore packages, ILogger logger)
 {
     /// <summary>
-    /// Runtime libraries for Linux in link order. Entries marked optional do not exist for every architecture or
-    /// version.
+    /// Runtime libraries for Linux and macOS in link order. Entries marked optional do not exist for every
+    /// system, architecture or version.
     /// </summary>
-    private static readonly (string Name, bool Required)[] LinuxLibraries =
+    private static (string Name, bool Required)[] UnixLibraries(TargetPlatform target) =>
     [
         ("libbootstrapper.o", true),
         ("libRuntime.WorkstationGC.a", true),
@@ -71,7 +71,7 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
         // Zstandard is part of the runtime pack since .NET 11; it follows its only user in the link order.
         ("libzstd.a", false),
         ("libSystem.Net.Security.Native.a", true),
-        ("libSystem.Security.Cryptography.Native.OpenSsl.a", true),
+        ($"lib{target.CryptographyLibrary}.a", true),
         ("libz.a", false),
         ("libbrotlienc.a", false),
         ("libbrotlidec.a", false),
@@ -112,6 +112,12 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
         var frameworkVersion = app.FrameworkVersion
             ?? ParseRequestedFramework(options.RuntimeVersion)
             ?? throw new InaException($"Could not determine the target framework of {app.Path}. Pass --runtime-version.");
+
+        var isMacOS = options.Target.OperatingSystem == TargetOperatingSystem.MacOS;
+        if (isMacOS && !options.PositionIndependent)
+        {
+            throw new InaException("macOS executables are always position independent. Fixed-address executables are only available for Linux and Windows.");
+        }
 
         var outputPath = Path.GetFullPath(options.OutputPath ?? app.Name + options.Target.ExecutableExtension);
         if (Directory.Exists(outputPath))
@@ -164,22 +170,29 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
             logger.LogInformation("Linking {Output}", outputPath);
             try
             {
+                // The object format follows from the operating system: PE for Windows, Mach-O for macOS, ELF for
+                // Linux. In every case the system libraries are represented by an import table, never by files of
+                // the target system.
                 IReadOnlyList<LinkInput> inputs = [LinkInput.FromFile(objectPath), .. CollectNativeLibraries(packs, options)];
                 IReadOnlyList<string> exports = [IlcArguments.DiagnosticsSymbol(packs.RuntimeVersion)];
-                link = options.Target.OperatingSystem == TargetOperatingSystem.Windows
-                    ? LinkForWindows(app, options, outputPath, inputs, exports)
-                    : ElfLinker.Link(
-                        new LinkOptions
-                        {
-                            OutputPath = outputPath,
-                            Architecture = options.Target.Architecture,
-                            Imports = ImportLibrarySet.ForGlibc(options.Target.Architecture),
-                            Inputs = inputs,
-                            PositionIndependent = options.PositionIndependent,
-                            EmitSymbolTable = options.EmitSymbolTable,
-                            ExportedSymbols = exports,
-                        },
-                        logger);
+                if (options.Target.OperatingSystem == TargetOperatingSystem.Windows)
+                {
+                    link = LinkForWindows(app, options, outputPath, inputs, exports);
+                }
+                else
+                {
+                    var linkOptions = new LinkOptions
+                    {
+                        OutputPath = outputPath,
+                        Architecture = options.Target.Architecture,
+                        Imports = isMacOS ? ImportLibrarySet.ForMacOS(options.Target.Architecture) : ImportLibrarySet.ForGlibc(options.Target.Architecture),
+                        Inputs = inputs,
+                        PositionIndependent = options.PositionIndependent,
+                        EmitSymbolTable = options.EmitSymbolTable,
+                        ExportedSymbols = exports,
+                    };
+                    link = isMacOS ? MachOLinker.Link(linkOptions, logger) : ElfLinker.Link(linkOptions, logger);
+                }
             }
             catch (LinkerException e)
             {
@@ -244,7 +257,9 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
 
     private static List<LinkInput> CollectNativeLibraries(RuntimePacks packs, BuildOptions options)
     {
-        var libraries = options.Target.OperatingSystem == TargetOperatingSystem.Windows ? WindowsLibraries(options.Optimization) : LinuxLibraries;
+        var libraries = options.Target.OperatingSystem == TargetOperatingSystem.Windows
+            ? WindowsLibraries(options.Optimization)
+            : UnixLibraries(options.Target);
         var inputs = new List<LinkInput>();
         foreach (var (name, required) in libraries)
         {

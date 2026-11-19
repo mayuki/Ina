@@ -11,6 +11,9 @@ public class TargetPlatformTests
     [InlineData("linux", "x86_64", "linux-x64")]
     [InlineData("linux", "arm64", "linux-arm64")]
     [InlineData("linux", "aarch64", "linux-arm64")]
+    [InlineData("macos", "arm64", "osx-arm64")]
+    [InlineData("macOS", "x64", "osx-x64")]
+    [InlineData("osx", "aarch64", "osx-arm64")]
     [InlineData("windows", "x64", "win-x64")]
     [InlineData("Windows", "amd64", "win-x64")]
     [InlineData("win", "arm64", "win-arm64")]
@@ -22,8 +25,10 @@ public class TargetPlatformTests
     [Fact]
     public void ParseDefaultsToTheHostWhenItIsASupportedTargetAndToLinuxOtherwise()
     {
+        var operatingSystem = OperatingSystem.IsWindows() ? TargetOperatingSystem.Windows
+            : OperatingSystem.IsMacOS() ? TargetOperatingSystem.MacOS
+            : TargetOperatingSystem.Linux;
         var architecture = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? TargetArchitecture.Arm64 : TargetArchitecture.X64;
-        var operatingSystem = OperatingSystem.IsWindows() ? TargetOperatingSystem.Windows : TargetOperatingSystem.Linux;
 
         Assert.Equal(new TargetPlatform(operatingSystem, architecture), TargetPlatform.Parse(null, null));
     }
@@ -32,13 +37,26 @@ public class TargetPlatformTests
     public void FileNamesFollowTheConventionsOfTheTarget()
     {
         var linux = new TargetPlatform(TargetOperatingSystem.Linux, TargetArchitecture.X64);
+        var macOS = new TargetPlatform(TargetOperatingSystem.MacOS, TargetArchitecture.Arm64);
         var windows = new TargetPlatform(TargetOperatingSystem.Windows, TargetArchitecture.X64);
 
         Assert.Equal((string.Empty, ".o"), (linux.ExecutableExtension, linux.ObjectExtension));
+        Assert.Equal((string.Empty, ".o"), (macOS.ExecutableExtension, macOS.ObjectExtension));
         Assert.Equal((".exe", ".obj"), (windows.ExecutableExtension, windows.ObjectExtension));
 
         // ILCompiler has its own name for Windows.
         Assert.Equal("win", windows.OperatingSystemName);
+    }
+
+    [Theory]
+    [InlineData(TargetOperatingSystem.Linux, "linux", "System.Security.Cryptography.Native.OpenSsl")]
+    [InlineData(TargetOperatingSystem.MacOS, "osx", "System.Security.Cryptography.Native.Apple")]
+    public void OperatingSystemDeterminesCompilerNameAndCryptographyLibrary(TargetOperatingSystem operatingSystem, string name, string cryptography)
+    {
+        var target = new TargetPlatform(operatingSystem, TargetArchitecture.X64);
+
+        Assert.Equal(name, target.OperatingSystemName);
+        Assert.Equal(cryptography, target.CryptographyLibrary);
     }
 
     [Theory]

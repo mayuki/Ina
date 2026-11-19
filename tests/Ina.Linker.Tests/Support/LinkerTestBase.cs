@@ -104,7 +104,7 @@ public abstract class LinkerTestBase : IDisposable
         Assert.SkipUnless(CanRunLinuxX64, "Running the linked executable requires an x86-64 Linux host, or Windows with WSL.");
         if (!OperatingSystem.IsWindows())
         {
-            return Start(new ProcessStartInfo(path));
+            return TestProcess.Run(new ProcessStartInfo(path));
         }
 
         // The Linux side sees the drives of Windows under /mnt.
@@ -112,7 +112,7 @@ public abstract class LinkerTestBase : IDisposable
         var startInfo = new ProcessStartInfo("wsl.exe");
         startInfo.ArgumentList.Add("--exec");
         startInfo.ArgumentList.Add($"/mnt/{char.ToLowerInvariant(full[0])}{full[2..].Replace('\\', '/')}");
-        return Start(startInfo);
+        return TestProcess.Run(startInfo);
     }
 
     /// <summary>Runs a linked AArch64 executable, under emulation when the host is not AArch64.</summary>
@@ -121,35 +121,14 @@ public abstract class LinkerTestBase : IDisposable
         Assert.SkipUnless(CanRunLinuxArm64, "Running the linked executable requires an AArch64 Linux host, or qemu-user with an AArch64 C library.");
         if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
         {
-            return Start(new ProcessStartInfo(path));
+            return TestProcess.Run(new ProcessStartInfo(path));
         }
 
         var startInfo = new ProcessStartInfo(Arm64Emulator);
         startInfo.ArgumentList.Add("-L");
         startInfo.ArgumentList.Add(Arm64SystemRoot);
         startInfo.ArgumentList.Add(path);
-        return Start(startInfo);
-    }
-
-    /// <summary>
-    /// Starts a process, retrying while the executable is "busy". Tests run in parallel, and a process forked by
-    /// another test briefly inherits the handle through which this test wrote its executable; the kernel refuses to
-    /// execute a file that is open for writing anywhere (ETXTBSY).
-    /// </summary>
-    private static Process StartWithRetry(ProcessStartInfo startInfo)
-    {
-        const int TextFileBusy = 26;
-        for (var attempt = 0; ; attempt++)
-        {
-            try
-            {
-                return Process.Start(startInfo)!;
-            }
-            catch (System.ComponentModel.Win32Exception e) when (e.NativeErrorCode == TextFileBusy && attempt < 50)
-            {
-                Thread.Sleep(20);
-            }
-        }
+        return TestProcess.Run(startInfo);
     }
 
     private static string? FindOnPath(string program) =>
@@ -157,22 +136,4 @@ public abstract class LinkerTestBase : IDisposable
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
             .Select(directory => Path.Combine(directory, program))
             .FirstOrDefault(File.Exists);
-
-    private static (int ExitCode, string Output) Start(ProcessStartInfo startInfo)
-    {
-        startInfo.RedirectStandardOutput = true;
-        startInfo.RedirectStandardError = true;
-        startInfo.UseShellExecute = false;
-
-        using var process = StartWithRetry(startInfo);
-        var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
-        if (!process.WaitForExit(TimeSpan.FromSeconds(30)))
-        {
-            process.Kill();
-            Assert.Fail("The linked executable did not exit in time.");
-        }
-
-        return (process.ExitCode, output + error);
-    }
 }

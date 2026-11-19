@@ -5,9 +5,12 @@
 
   <PropertyGroup>
     <!-- Keep in sync with SupportedTargets in the task assembly. -->
-    <_InaSupportedRuntimeIdentifiers>linux-x64, linux-arm64</_InaSupportedRuntimeIdentifiers>
+    <_InaSupportedRuntimeIdentifiers>linux-x64, linux-arm64, osx-x64, osx-arm64</_InaSupportedRuntimeIdentifiers>
     <_InaRuntimeIdentifierIsSupported>false</_InaRuntimeIdentifierIsSupported>
     <_InaRuntimeIdentifierIsSupported Condition="'$(RuntimeIdentifier)' == 'linux-x64' or '$(RuntimeIdentifier)' == 'linux-arm64'">true</_InaRuntimeIdentifierIsSupported>
+    <_InaRuntimeIdentifierIsSupported Condition="'$(RuntimeIdentifier)' == 'osx-x64' or '$(RuntimeIdentifier)' == 'osx-arm64'">true</_InaRuntimeIdentifierIsSupported>
+    <_InaTargetsMacOS>false</_InaTargetsMacOS>
+    <_InaTargetsMacOS Condition="'$(RuntimeIdentifier)' == 'osx-x64' or '$(RuntimeIdentifier)' == 'osx-arm64'">true</_InaTargetsMacOS>
   </PropertyGroup>
 
   <!--
@@ -32,12 +35,13 @@
     <ItemGroup>
       <_InaUnsupportedSetting Include="NativeLib=$(NativeLib)" Condition="'$(NativeLib)' != ''" Reason="Ina links executables, not native libraries" />
       <_InaUnsupportedSetting Include="CustomNativeMain=true" Condition="'$(CustomNativeMain)' == 'true'" Reason="Ina links executables whose entry point is the managed Main" />
-      <_InaUnsupportedSetting Include="StaticExecutable=true" Condition="'$(StaticExecutable)' == 'true'" Reason="the executable is linked dynamically against the C library" />
+      <_InaUnsupportedSetting Include="StaticExecutable=true" Condition="'$(StaticExecutable)' == 'true'" Reason="the executable is linked dynamically against the system libraries" />
+      <_InaUnsupportedSetting Include="PositionIndependentExecutable=false" Condition="'$(PositionIndependentExecutable)' == 'false' and '$(_InaTargetsMacOS)' == 'true'" Reason="macOS executables are always position independent" />
       <_InaUnsupportedSetting Include="StaticICULinking=true" Condition="'$(StaticICULinking)' == 'true'" Reason="it needs a native toolchain to build ICU into the application" />
       <_InaUnsupportedSetting Include="StaticOpenSslLinking=true" Condition="'$(StaticOpenSslLinking)' == 'true'" Reason="it needs a native toolchain to build OpenSSL into the application" />
-      <_InaUnsupportedSetting Include="LinkStandardCPlusPlusLibrary=true" Condition="'$(LinkStandardCPlusPlusLibrary)' == 'true'" Reason="only the C library can be linked dynamically" />
-      <_InaUnsupportedSetting Include="UseSystemZlib=true" Condition="'$(UseSystemZlib)' == 'true'" Reason="only the C library can be linked dynamically" />
-      <_InaUnsupportedSetting Include="UseSystemBrotli=true" Condition="'$(UseSystemBrotli)' == 'true'" Reason="only the C library can be linked dynamically" />
+      <_InaUnsupportedSetting Include="LinkStandardCPlusPlusLibrary=true" Condition="'$(LinkStandardCPlusPlusLibrary)' == 'true'" Reason="that library is not among the system libraries Ina links against" />
+      <_InaUnsupportedSetting Include="UseSystemZlib=true" Condition="'$(UseSystemZlib)' == 'true'" Reason="that library is not among the system libraries Ina links against" />
+      <_InaUnsupportedSetting Include="UseSystemBrotli=true" Condition="'$(UseSystemBrotli)' == 'true'" Reason="that library is not among the system libraries Ina links against" />
     </ItemGroup>
 
     <Error Code="INA1003" Condition="'@(_InaUnsupportedSetting)' != ''"

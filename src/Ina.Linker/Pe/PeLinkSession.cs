@@ -134,11 +134,11 @@ internal sealed partial class PeLinkSession
     }
 
     /// <summary>Lists what a member of a library without a symbol index defines.</summary>
-    private static IEnumerable<string> DefinedSymbols(string name, ReadOnlyMemory<byte> data)
+    private static IEnumerable<string>? DefinedSymbols(string name, ReadOnlyMemory<byte> data)
     {
         if (!CoffObject.IsObject(data.Span))
         {
-            return [];
+            return null;
         }
 
         var file = CoffObject.Parse(name, data);

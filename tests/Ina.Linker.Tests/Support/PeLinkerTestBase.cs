@@ -60,27 +60,13 @@ public abstract class PeLinkerTestBase : IDisposable
     protected static (int ExitCode, string Output) Run(string path)
     {
         Assert.SkipUnless(CanRunWindowsX64, "Running the linked executable requires an x64 Windows host.");
-        return Start(path);
+        return TestProcess.Run(new ProcessStartInfo(path));
     }
 
     /// <summary>Runs a linked ARM64 executable.</summary>
     protected static (int ExitCode, string Output) RunArm64(string path)
     {
         Assert.SkipUnless(CanRunWindowsArm64, "Running the linked executable requires a Windows on ARM64 host.");
-        return Start(path);
-    }
-
-    private static (int ExitCode, string Output) Start(string path)
-    {
-        using var process = Process.Start(new ProcessStartInfo(path) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false })!;
-        var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
-        if (!process.WaitForExit(TimeSpan.FromSeconds(30)))
-        {
-            process.Kill();
-            Assert.Fail("The linked executable did not exit in time.");
-        }
-
-        return (process.ExitCode, output + error);
+        return TestProcess.Run(new ProcessStartInfo(path));
     }
 }

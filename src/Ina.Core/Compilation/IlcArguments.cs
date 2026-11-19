@@ -92,11 +92,13 @@ public static class IlcArguments
         "System.Private.CoreLib", "System.Private.StackTraceMetadata", "System.Private.TypeLoader", "System.Private.Reflection.Execution",
     ];
 
-    /// <summary>Native libraries of the framework that are linked statically, so P/Invokes into them become direct calls.</summary>
+    /// <summary>
+    /// Native libraries of the framework that are linked statically on Linux and macOS, so P/Invokes into them
+    /// become direct calls. The cryptography library of the target platform is added to them.
+    /// </summary>
     private static readonly string[] DirectPInvokeLibraries =
     [
         "System.Native", "System.Globalization.Native", "System.IO.Compression.Native", "System.Net.Security.Native",
-        "System.Security.Cryptography.Native.OpenSsl",
     ];
 
     /// <summary>
@@ -146,7 +148,10 @@ public static class IlcArguments
         // On Windows the compiler has to know that the exported symbol is a variable, not a function.
         arguments.Add($"--export-dynamic-symbol:{DiagnosticsSymbol(options.RuntimeVersion)}{(isWindows ? ",DATA" : string.Empty)}");
         arguments.AddRange(InitAssemblies.Select(static assembly => $"--initassembly:{assembly}"));
-        arguments.AddRange((isWindows ? WindowsDirectPInvokeLibraries : DirectPInvokeLibraries).Select(static library => $"--directpinvoke:{library}"));
+        IEnumerable<string> directPInvokeLibraries = isWindows
+            ? WindowsDirectPInvokeLibraries
+            : DirectPInvokeLibraries.Append(options.Target.CryptographyLibrary);
+        arguments.AddRange(directPInvokeLibraries.Select(static library => $"--directpinvoke:{library}"));
         arguments.AddRange(options.DirectPInvokeLists.Select(static list => $"--directpinvokelist:{list}"));
 
         var knobs = MergeKnobs(options.RuntimeKnobs);

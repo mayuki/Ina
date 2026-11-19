@@ -8,10 +8,16 @@ public enum ImportedSymbolKind
     Function,
     Object,
     Tls,
+
+    /// <summary>The table does not say what the symbol is. Mach-O linking does not depend on it.</summary>
+    Unspecified,
 }
 
 /// <summary>A symbol that a shared library provides at run time.</summary>
-/// <param name="Library">The SONAME of the providing library, e.g. <c>libc.so.6</c>.</param>
+/// <param name="Library">
+/// The name under which the loader finds the providing library: the SONAME for ELF, e.g. <c>libc.so.6</c>, and the
+/// install name for Mach-O, e.g. <c>/usr/lib/libSystem.B.dylib</c>.
+/// </param>
 /// <param name="Version">The symbol version to bind to, e.g. <c>GLIBC_2.2.5</c>; null for unversioned symbols.</param>
 public sealed record ImportedSymbol(string Library, string? Version, ImportedSymbolKind Kind);
 
@@ -22,8 +28,11 @@ public sealed record ImportedSymbol(string Library, string? Version, ImportedSym
 /// </summary>
 public sealed class ImportLibrarySet
 {
+    private static readonly Version DefaultLibraryVersion = new(1, 0, 0);
+
     private readonly Dictionary<string, ImportedSymbol> _symbols = new(StringComparer.Ordinal);
     private readonly List<string> _libraries = [];
+    private readonly Dictionary<string, (Version Compatibility, Version Current)> _libraryVersions = new(StringComparer.Ordinal);
 
     public ImportLibrarySet(string description, string interpreter)
     {
@@ -34,8 +43,14 @@ public sealed class ImportLibrarySet
     /// <summary>Human readable description, e.g. <c>glibc 2.27 x86_64</c>.</summary>
     public string Description { get; }
 
-    /// <summary>Path of the dynamic loader on the target system (PT_INTERP).</summary>
+    /// <summary>Path of the dynamic loader on the target system (PT_INTERP, LC_LOAD_DYLINKER).</summary>
     public string Interpreter { get; }
+
+    /// <summary>The oldest version of the operating system that provides everything in the table; null if not stated.</summary>
+    public Version? MinimumOSVersion { get; init; }
+
+    /// <summary>The version of the SDK the table was generated from; null if not stated.</summary>
+    public Version? SdkVersion { get; init; }
 
     public int Count => _symbols.Count;
 
@@ -61,6 +76,25 @@ public sealed class ImportLibrarySet
     }
 
     public bool TryGet(string name, out ImportedSymbol symbol) => _symbols.TryGetValue(name, out symbol!);
+
+    /// <summary>Records the versions of a Mach-O dynamic library, which executables state for every dependency.</summary>
+    public void SetLibraryVersion(string library, Version compatibility, Version current)
+    {
+        AddLibrary(library);
+        _libraryVersions[library] = (compatibility, current);
+    }
+
+    /// <summary>The compatibility and current version of a Mach-O dynamic library.</summary>
+    public (Version Compatibility, Version Current) LibraryVersion(string library) =>
+        _libraryVersions.TryGetValue(library, out var versions) ? versions : (DefaultLibraryVersion, DefaultLibraryVersion);
+
+    /// <summary>Returns the import table of the macOS system libraries for <paramref name="architecture"/>.</summary>
+    public static ImportLibrarySet ForMacOS(TargetArchitecture architecture) => LoadEmbedded(architecture switch
+    {
+        TargetArchitecture.X64 => "macos-x64",
+        TargetArchitecture.Arm64 => "macos-arm64",
+        _ => throw new LinkerException($"no import table for architecture {architecture}"),
+    });
 
     /// <summary>Returns the import table of the GNU C library for <paramref name="architecture"/>.</summary>
     public static ImportLibrarySet ForGlibc(TargetArchitecture architecture) => LoadEmbedded(architecture switch
@@ -98,7 +132,15 @@ public sealed class ImportLibrarySet
     /// D stderr stdout
     /// </code>
     /// <c>needed</c> gives the dependency order; <c>F</c>, <c>D</c> and <c>T</c> list functions, data objects and
-    /// thread-local variables of the current library and version.
+    /// thread-local variables of the current library and version. Tables of Mach-O libraries additionally use
+    /// <code>
+    /// platform macos 12.0 26.5
+    /// lib /usr/lib/libSystem.B.dylib
+    /// libver 1.0.0 1356.0.0
+    /// S _abort _accept
+    /// </code>
+    /// for the minimum OS and SDK version, the compatibility and current version of a library, and symbols whose
+    /// kind is not recorded.
     /// </summary>
     public static ImportLibrarySet Parse(TextReader reader)
     {
@@ -108,6 +150,9 @@ public sealed class ImportLibrarySet
         string? library = null;
         string? version = null;
         var entries = new List<(string Name, ImportedSymbol Symbol)>();
+        var libraryVersions = new List<(string Library, Version Compatibility, Version Current)>();
+        Version? minimumOS = null;
+        Version? sdk = null;
 
         while (reader.ReadLine() is { } line)
         {
@@ -137,7 +182,30 @@ public sealed class ImportLibrarySet
                 case "ver":
                     version = rest == "-" ? null : rest;
                     break;
-                case "F" or "D" or "T":
+                case "platform":
+                {
+                    var parts = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length != 3 || !Version.TryParse(parts[1], out minimumOS) || !Version.TryParse(parts[2], out sdk))
+                    {
+                        throw new LinkerException("malformed import table: expected 'platform <name> <minimum version> <sdk version>'");
+                    }
+
+                    break;
+                }
+
+                case "libver":
+                {
+                    var parts = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (library is null || parts.Length != 2 || !Version.TryParse(parts[0], out var compatibility) || !Version.TryParse(parts[1], out var current))
+                    {
+                        throw new LinkerException("malformed import table: expected 'libver <compatibility version> <current version>' after a 'lib' line");
+                    }
+
+                    libraryVersions.Add((library, compatibility, current));
+                    break;
+                }
+
+                case "F" or "D" or "T" or "S":
                     if (library is null)
                     {
                         throw new LinkerException("malformed import table: symbols before any 'lib' line");
@@ -147,7 +215,8 @@ public sealed class ImportLibrarySet
                     {
                         "F" => ImportedSymbolKind.Function,
                         "D" => ImportedSymbolKind.Object,
-                        _ => ImportedSymbolKind.Tls,
+                        "T" => ImportedSymbolKind.Tls,
+                        _ => ImportedSymbolKind.Unspecified,
                     };
                     var import = new ImportedSymbol(library, version, kind);
                     foreach (var name in rest.Split(' ', StringSplitOptions.RemoveEmptyEntries))
@@ -161,7 +230,7 @@ public sealed class ImportLibrarySet
             }
         }
 
-        var set = new ImportLibrarySet(description, interpreter);
+        var set = new ImportLibrarySet(description, interpreter) { MinimumOSVersion = minimumOS, SdkVersion = sdk };
         foreach (var name in needed)
         {
             set.AddLibrary(name);
@@ -170,6 +239,11 @@ public sealed class ImportLibrarySet
         foreach (var (name, symbol) in entries)
         {
             set.Add(name, symbol);
+        }
+
+        foreach (var (name, compatibility, current) in libraryVersions)
+        {
+            set.SetLibraryVersion(name, compatibility, current);
         }
 
         return set;

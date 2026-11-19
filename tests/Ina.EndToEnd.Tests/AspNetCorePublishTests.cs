@@ -24,5 +24,8 @@ public class AspNetCorePublishTests(PublishEnvironment environment)
         Assert.Contains("POST /todos -> 201 /todos/3", native.Output);
         Assert.Contains("GET /todos/99 -> 404", native.Output);
         Assert.Equal(reference.Output, native.Output);
+
+        // PublishIna alone has to keep the defaults that the web SDK applies to a project with PublishAot.
+        Assert.Contains("Event sources: available", native.Output);
     }
 }
