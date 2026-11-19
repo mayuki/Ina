@@ -59,6 +59,33 @@ public class CoffInputTests : PeLinkerTestBase
     }
 
     [Fact]
+    public void SectionNumbersBeyondTheRangeOfASignedShortAreUnderstood()
+    {
+        // The regular format counts up to 65279 sections, and ILCompiler stays with it for an application of
+        // ASP.NET Core, which has more than 32767. Only 0xffff (absolute) and 0xfffe (debugging) are special.
+        var builder = new CoffObjectBuilder();
+        builder.External("wmain", builder.Text(".text$mn", WindowsCode.Return(0)));
+        for (var i = 0; i < 40000; i++)
+        {
+            var section = builder.Data(".data$x", [(byte)i], 1);
+            builder.Comdat(section);
+            builder.External($"value{i}", section);
+        }
+
+        builder.Absolute("constant", 99);
+        var data = builder.Build();
+
+        var file = CoffObject.Parse("large.obj", data);
+        var symbols = file.Records.Where(static r => !r.IsAuxiliary && r.IsExternal).ToDictionary(static r => r.Name);
+        Assert.Equal(40001, symbols["value39999"].SectionNumber);
+        Assert.Equal(CoffComdat.Any, file.Sections[40001]!.ComdatSelection);
+        Assert.True(symbols["constant"].IsAbsolute);
+
+        var image = Load(Link(static o => o with { ExportedSymbols = ["value39999"] }, data));
+        Assert.Equal([(byte)(39999 & 0xff)], image.Read(image.Exports["value39999"], 1));
+    }
+
+    [Fact]
     public void ComdatInformationComesFromTheSectionSymbols()
     {
         var builder = new CoffObjectBuilder();

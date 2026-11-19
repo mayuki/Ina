@@ -61,7 +61,7 @@ public class PublishConfigurationTests(PublishEnvironment environment)
     }
 
     [Theory]
-    [InlineData("win-x64")]
+    [InlineData("win-x86")]
     [InlineData("linux-musl-arm64")]
     public async Task UnsupportedRuntimeIdentifierIsRejectedBeforeAnythingIsDownloaded(string runtimeIdentifier)
     {
@@ -72,7 +72,7 @@ public class PublishConfigurationTests(PublishEnvironment environment)
         Assert.NotEqual(0, publish.ExitCode);
         Assert.Contains("error INA1002", publish.Output);
         Assert.Contains(runtimeIdentifier, publish.Output);
-        Assert.Contains("linux-x64, linux-arm64, osx-x64, osx-arm64", publish.Output);
+        Assert.Contains("linux-x64, linux-arm64, osx-x64, osx-arm64, win-x64, win-arm64", publish.Output);
 
         // The restore, which would fetch the compiler and the runtime pack of that platform, has not happened.
         Assert.False(File.Exists(Path.Combine(project.ProjectDirectory, "obj", "project.assets.json")));

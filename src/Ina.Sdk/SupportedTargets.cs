@@ -7,6 +7,7 @@ internal enum TargetSystem
 {
     Linux,
     MacOS,
+    Windows,
 }
 
 /// <summary>What the link task has to know about a runtime identifier.</summary>
@@ -18,7 +19,7 @@ internal readonly record struct SupportedTarget(TargetSystem System, TargetArchi
 /// </summary>
 internal static class SupportedTargets
 {
-    public static IReadOnlyList<string> RuntimeIdentifiers { get; } = ["linux-x64", "linux-arm64", "osx-x64", "osx-arm64"];
+    public static IReadOnlyList<string> RuntimeIdentifiers { get; } = ["linux-x64", "linux-arm64", "osx-x64", "osx-arm64", "win-x64", "win-arm64"];
 
     /// <summary>The target of a supported runtime identifier. Linux means glibc; musl has identifiers of its own.</summary>
     public static SupportedTarget? Find(string runtimeIdentifier) => runtimeIdentifier.ToLowerInvariant() switch
@@ -27,6 +28,8 @@ internal static class SupportedTargets
         "linux-arm64" => new(TargetSystem.Linux, TargetArchitecture.Arm64),
         "osx-x64" => new(TargetSystem.MacOS, TargetArchitecture.X64),
         "osx-arm64" => new(TargetSystem.MacOS, TargetArchitecture.Arm64),
+        "win-x64" => new(TargetSystem.Windows, TargetArchitecture.X64),
+        "win-arm64" => new(TargetSystem.Windows, TargetArchitecture.Arm64),
         _ => null,
     };
 }

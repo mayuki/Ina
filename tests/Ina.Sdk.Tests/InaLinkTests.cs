@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Ina.Linker;
 using Ina.Linker.Elf;
 using Ina.Linker.MachO;
+using Ina.Linker.Pe;
 using Ina.Linker.Tests.Support;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
@@ -184,8 +185,175 @@ public sealed class InaLinkTests : IDisposable
         Assert.False(File.Exists(task.OutputPath));
     }
 
+    [Fact]
+    public void WindowsRuntimeIdentifierProducesAPeExecutable()
+    {
+        var task = CreateTask("win-x64", WindowsCode.MainCalling("helper"), WindowsCode.Function("helper", WindowsCode.Return(42)));
+
+        Assert.True(task.Execute(), Describe(_engine.Errors));
+        Assert.Empty(_engine.Errors);
+        Assert.Empty(_engine.Warnings);
+
+        // Windows binds imports by name without versions, so there is no minimum system to report.
+        var summary = Assert.Single(_engine.Messages, static m => m.Importance == MessageImportance.High);
+        Assert.Contains("win-x64", summary.Message);
+        Assert.Contains(Path.GetFileName(task.OutputPath), summary.Message);
+        Assert.DoesNotContain("glibc", summary.Message);
+
+        // A console application that Windows may load at any address, like one that link.exe produces by default.
+        var image = new PeImage(File.ReadAllBytes(task.OutputPath));
+        Assert.Equal(CoffMachine.Amd64, image.Machine);
+        Assert.Equal(3, image.Subsystem);
+        Assert.Equal(0x0040, image.DllCharacteristics & 0x0040);
+        Assert.Equal(1572864ul, image.StackReserve);
+
+        Assert.SkipUnless(OperatingSystem.IsWindows() && RuntimeInformation.ProcessArchitecture == Architecture.X64, "Running the executable requires an x64 Windows host.");
+        using var process = Process.Start(new ProcessStartInfo(task.OutputPath) { UseShellExecute = false })!;
+        process.WaitForExit();
+        Assert.Equal(42, process.ExitCode);
+    }
+
+    [Fact]
+    public void WindowsRuntimeIdentifierSelectsTheArchitecture()
+    {
+        var builder = new CoffObjectBuilder(CoffMachine.Arm64);
+        builder.External("wmain", builder.Text(".text$mn", Code.Arm64(0x52800540, Arm64Ret))); // mov w0, #42 ; ret
+        var task = CreateTask("win-arm64", builder.Build());
+
+        Assert.True(task.Execute(), Describe(_engine.Errors));
+
+        Assert.Equal(CoffMachine.Arm64, new PeImage(File.ReadAllBytes(task.OutputPath)).Machine);
+    }
+
+    [Fact]
+    public void OptionsOfTheWindowsLinkLineAreApplied()
+    {
+        // What the NativeAOT targets pass to link.exe as /ENTRY, /SUBSYSTEM, /STACK and /MERGE.
+        var builder = new CoffObjectBuilder();
+        builder.External("start", builder.Text(".text$mn", WindowsCode.Return(0)));
+        builder.External("managed", builder.Text(".managedcode$I", WindowsCode.Return(1)));
+        var task = CreateTask("win-x64", builder.Build());
+        task.EntryPoint = "start";
+        task.Subsystem = "WINDOWS";
+        task.StackSize = "2097152";
+        task.MergedSections = [".managedcode=.text"];
+        task.ExportsFile = Path.Combine(_directory, "app.def");
+        File.WriteAllText(task.ExportsFile, "EXPORTS\n   managed\n");
+
+        Assert.True(task.Execute(), Describe(_engine.Errors));
+
+        var image = new PeImage(File.ReadAllBytes(task.OutputPath));
+        Assert.Equal(2, image.Subsystem);
+        Assert.Equal(2097152ul, image.StackReserve);
+        Assert.Equal(".text", image.SectionOf(image.Exports["managed"]).Name);
+        Assert.DoesNotContain(image.Sections, static s => s.Name == ".managedcode");
+
+        // The object has no wmain, which the startup code of the linker would call: the entry point is "start".
+        Assert.Equal(".text", image.SectionOf(image.EntryPoint).Name);
+        Assert.DoesNotContain(image.Imports, static i => i.Names.Contains("_initterm"));
+    }
+
+    [Fact]
+    public void SubsystemIsCaseInsensitiveLikeTheOptionOfLinkExe()
+    {
+        var task = CreateTask("win-x64", WindowsCode.MainReturning(0));
+        task.Subsystem = "Console";
+
+        Assert.True(task.Execute(), Describe(_engine.Errors));
+
+        Assert.Equal(3, new PeImage(File.ReadAllBytes(task.OutputPath)).Subsystem);
+    }
+
+    [Fact]
+    public void FixedAddressExecutableForWindowsHasNoBaseRelocations()
+    {
+        var task = CreateTask("win-x64", WindowsCode.MainReturning(0));
+        task.PositionIndependent = false;
+
+        Assert.True(task.Execute(), Describe(_engine.Errors));
+
+        var image = new PeImage(File.ReadAllBytes(task.OutputPath));
+        Assert.Equal(0, image.DllCharacteristics & 0x0040);
+        Assert.Empty(image.BaseRelocations);
+    }
+
+    [Fact]
+    public void SymbolsOfTheModuleDefinitionFileAreExportedFromAWindowsExecutable()
+    {
+        // For the Microsoft linker ILCompiler names the exported symbols in a module-definition file.
+        var builder = new CoffObjectBuilder();
+        builder.External("wmain", builder.Text(".text$mn", WindowsCode.Return(0)));
+        builder.External("DotNetRuntimeContractDescriptor", builder.Data(".data", new byte[8]));
+        var hidden = CreateTask("win-x64", builder.Build());
+        var exported = CreateTask("win-x64", builder.Build());
+        exported.ExportsFile = Path.Combine(_directory, "app.def");
+        File.WriteAllText(exported.ExportsFile, "EXPORTS\n   DotNetRuntimeContractDescriptor DATA\n");
+
+        Assert.True(hidden.Execute(), Describe(_engine.Errors));
+        Assert.True(exported.Execute(), Describe(_engine.Errors));
+
+        Assert.Empty(new PeImage(File.ReadAllBytes(hidden.OutputPath)).Exports);
+        Assert.Equal(["DotNetRuntimeContractDescriptor"], new PeImage(File.ReadAllBytes(exported.OutputPath)).Exports.Keys);
+    }
+
     [Theory]
-    [InlineData("win-x64")]
+    [InlineData("NATIVE")]
+    [InlineData("WINDOWSCE")]
+    public void SubsystemOtherThanConsoleOrWindowsIsAnError(string subsystem)
+    {
+        var task = CreateTask("win-x64", WindowsCode.MainReturning(0));
+        task.Subsystem = subsystem;
+
+        Assert.False(task.Execute());
+
+        var error = Assert.Single(_engine.Errors);
+        Assert.Equal("INA1003", error.Code);
+        Assert.Contains(subsystem, error.Message);
+        Assert.False(File.Exists(task.OutputPath));
+    }
+
+    [Theory]
+    [InlineData("1.5 MB")]
+    [InlineData("-1")]
+    [InlineData("0")]
+    public void StackSizeThatIsNotAPositiveNumberIsAnError(string stackSize)
+    {
+        var task = CreateTask("win-x64", WindowsCode.MainReturning(0));
+        task.StackSize = stackSize;
+
+        Assert.False(task.Execute());
+
+        var error = Assert.Single(_engine.Errors);
+        Assert.Equal("INA1003", error.Code);
+        Assert.Contains(stackSize, error.Message);
+    }
+
+    [Fact]
+    public void StackSizeIsAlsoAcceptedInHexadecimalLikeTheOptionOfLinkExe()
+    {
+        var task = CreateTask("win-x64", WindowsCode.MainReturning(0));
+        task.StackSize = "0x200000";
+
+        Assert.True(task.Execute(), Describe(_engine.Errors));
+
+        Assert.Equal(0x200000ul, new PeImage(File.ReadAllBytes(task.OutputPath)).StackReserve);
+    }
+
+    [Fact]
+    public void MergedSectionThatIsNotANamePairIsAnError()
+    {
+        var task = CreateTask("win-x64", WindowsCode.MainReturning(0));
+        task.MergedSections = [".managedcode"];
+
+        Assert.False(task.Execute());
+
+        var error = Assert.Single(_engine.Errors);
+        Assert.Equal("INA1003", error.Code);
+        Assert.Contains(".managedcode", error.Message);
+    }
+
+    [Theory]
+    [InlineData("win-x86")]
     [InlineData("linux-musl-x64")]
     [InlineData("ios-arm64")]
     [InlineData("")]
@@ -197,7 +365,7 @@ public sealed class InaLinkTests : IDisposable
 
         var error = Assert.Single(_engine.Errors);
         Assert.Equal("INA1002", error.Code);
-        Assert.Contains("linux-x64, linux-arm64, osx-x64, osx-arm64", error.Message);
+        Assert.Contains("linux-x64, linux-arm64, osx-x64, osx-arm64, win-x64, win-arm64", error.Message);
         Assert.False(File.Exists(task.OutputPath));
     }
 
@@ -241,7 +409,8 @@ public sealed class InaLinkTests : IDisposable
         {
             BuildEngine = _engine,
             Inputs = inputs,
-            OutputPath = Path.Combine(_directory, $"app{index}"),
+            // Windows starts a program only by the name with its extension.
+            OutputPath = Path.Combine(_directory, runtimeIdentifier.StartsWith("win", StringComparison.Ordinal) ? $"app{index}.exe" : $"app{index}"),
             RuntimeIdentifier = runtimeIdentifier,
         };
     }

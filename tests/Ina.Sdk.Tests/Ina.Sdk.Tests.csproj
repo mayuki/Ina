@@ -23,6 +23,8 @@
     <Compile Include="..\Ina.Linker.Tests\Support\ElfObjectBuilder.cs" Link="Support\ElfObjectBuilder.cs" />
     <Compile Include="..\Ina.Linker.Tests\Support\MachObjectBuilder.cs" Link="Support\MachObjectBuilder.cs" />
     <Compile Include="..\Ina.Linker.Tests\Support\MachOImage.cs" Link="Support\MachOImage.cs" />
+    <Compile Include="..\Ina.Linker.Tests\Support\PeImage.cs" Link="Support\PeImage.cs" />
+    <Compile Include="..\Ina.Linker.Tests\Support\WindowsCode.cs" Link="Support\WindowsCode.cs" />
   </ItemGroup>
 
   <ItemGroup>

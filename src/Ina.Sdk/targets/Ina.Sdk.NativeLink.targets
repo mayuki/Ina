@@ -1,14 +1,15 @@
 <!--
-  Replaces the part of the NativeAOT targets (Microsoft.NETCore.Native.targets and
-  Microsoft.NETCore.Native.Unix.targets of the Microsoft.DotNet.ILCompiler package) that depends on a native
+  Replaces the part of the NativeAOT targets (Microsoft.NETCore.Native.targets, and Microsoft.NETCore.Native.Unix.targets
+  or Microsoft.NETCore.Native.Windows.targets of the Microsoft.DotNet.ILCompiler package) that depends on a native
   toolchain. Everything up to and including the compilation with ILCompiler, and the publish steps after the link,
   stay as they are.
 
   Two targets are redefined, which works because this file is imported after the originals:
 
-  - SetupOSSpecificProps selects the runtime libraries to link. The original also looks for clang, gcc and objcopy
-    and fails if they are missing.
-  - LinkNative runs the linker. The original calls clang, and afterwards objcopy, or dsymutil and strip for macOS.
+  - SetupOSSpecificProps selects the runtime libraries to link. The original also looks for clang, gcc and objcopy,
+    or for Visual Studio with link.exe and the Windows SDK, and fails if they are missing.
+  - LinkNative runs the linker. The original calls clang, and afterwards objcopy, or dsymutil and strip for macOS;
+    for Windows it calls link.exe.
 -->
 <Project>
 
@@ -25,14 +26,18 @@
   <UsingTask TaskName="Ina.Sdk.InaLink" AssemblyFile="$(InaTasksAssembly)" Runtime="NET" />
 
   <!--
+    ILCompiler turns P/Invokes into the libraries listed as DirectPInvoke into direct calls, which is why the target
+    is a dependency of the compilation as well. The system libraries themselves are not listed, because the import
+    table of the linker knows which one exports a symbol.
+  -->
+  <Target Name="SetupOSSpecificProps" DependsOnTargets="$(IlcDynamicBuildPropertyDependencies);_InaSelectUnixLibraries;_InaSelectWindowsLibraries" />
+
+  <!--
     The libraries of an executable that is linked dynamically against the system libraries only, in the order of
     the original target: the native parts of the framework first, then the runtime they depend on. Linux and macOS
-    differ in the library that implements cryptography: OpenSSL for Linux, Apple's frameworks for macOS. The frameworks and
-    system libraries themselves are not listed, because the import table of the linker knows which one exports a
-    symbol. ILCompiler turns P/Invokes into the libraries listed as DirectPInvoke into direct calls, which is why
-    the target is a dependency of the compilation as well.
+    differ in the library that implements cryptography: OpenSSL for Linux, Apple's frameworks for macOS.
   -->
-  <Target Name="SetupOSSpecificProps" DependsOnTargets="$(IlcDynamicBuildPropertyDependencies)">
+  <Target Name="_InaSelectUnixLibraries" Condition="'$(_InaTargetsWindows)' != 'true'">
 
     <PropertyGroup>
       <FullRuntimeName>libRuntime.WorkstationGC</FullRuntimeName>
@@ -77,6 +82,56 @@
   </Target>
 
   <!--
+    The same for Windows, in the order of the original target: the runtime first, then the native parts of the
+    framework. On Windows most of the platform abstraction is managed code that calls the system directly, so only
+    two native parts are left. The import libraries of the Windows SDK that the original passes to link.exe
+    (SdkNativeLibrary) are not needed: the import table of the linker takes their place. What the original does
+    without a toolchain is kept: it tells ILCompiler which Windows APIs exist on every supported version, so that
+    P/Invokes into them become direct references that the linker binds.
+  -->
+  <Target Name="_InaSelectWindowsLibraries" Condition="'$(_InaTargetsWindows)' == 'true'">
+
+    <PropertyGroup>
+      <FullRuntimeName>Runtime.WorkstationGC</FullRuntimeName>
+      <FullRuntimeName Condition="'$(ServerGarbageCollection)' == 'true' or '$(IlcLinkServerGC)' == 'true'">Runtime.ServerGC</FullRuntimeName>
+      <EventPipeName>eventpipe-disabled</EventPipeName>
+      <EventPipeName Condition="'$(EventSourceSupport)' == 'true'">eventpipe-enabled</EventPipeName>
+      <VxSortSupportName>Runtime.VxsortDisabled</VxSortSupportName>
+      <VxSortSupportName Condition="'$(OptimizationPreference)' == 'Speed' or '$(IlcEnableVxsort)' == 'true'">Runtime.VxsortEnabled</VxSortSupportName>
+      <StandaloneGCSupportName>standalonegc-disabled</StandaloneGCSupportName>
+      <StandaloneGCSupportName Condition="'$(IlcStandaloneGCSupport)' == 'true'">standalonegc-enabled</StandaloneGCSupportName>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <NativeLibrary Include="$(IlcSdkPath)bootstrapper.obj" />
+      <NativeLibrary Include="$(IlcSdkPath)$(FullRuntimeName).lib" />
+      <NativeLibrary Include="$(IlcSdkPath)$(EventPipeName).lib" />
+      <NativeLibrary Include="$(IlcSdkPath)$(VxSortSupportName).lib" Condition="Exists('$(IlcSdkPath)$(VxSortSupportName).lib')" />
+      <NativeLibrary Include="$(IlcSdkPath)$(StandaloneGCSupportName).lib" />
+      <NativeLibrary Include="$(IlcSdkPath)aotminipal.lib" />
+      <NativeLibrary Include="$(IlcSdkPath)zlibstatic.lib" />
+      <NativeLibrary Include="$(IlcSdkPath)brotlicommon.lib" />
+      <NativeLibrary Include="$(IlcSdkPath)brotlienc.lib" />
+      <NativeLibrary Include="$(IlcSdkPath)brotlidec.lib" />
+      <!-- Zstandard is part of the runtime pack since .NET 11. -->
+      <NativeLibrary Include="$(IlcSdkPath)zstd_static.lib" Condition="Exists('$(IlcSdkPath)zstd_static.lib')" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <NetCoreAppNativeLibrary Include="System.Globalization.Native" />
+      <NetCoreAppNativeLibrary Include="System.IO.Compression.Native" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <DirectPInvoke Include="@(NetCoreAppNativeLibrary)" />
+      <NativeLibrary Include="@(NetCoreAppNativeLibrary->'$(IlcSdkPath)%(Identity).Aot.lib')" />
+
+      <!-- The list ships next to the NativeAOT targets, which ILCompilerTargetsPath points into. -->
+      <DirectPInvokeList Include="$([System.IO.Path]::Combine($([System.IO.Path]::GetDirectoryName($(ILCompilerTargetsPath))), 'WindowsAPIs.txt'))" />
+    </ItemGroup>
+  </Target>
+
+  <!--
     Writes down what is linked and how. MSBuild decides by time stamps whether a target has to run; this file
     changes exactly when the link would produce something else, for example when only an option of the link
     changed and the object file is still up to date.
@@ -87,13 +142,25 @@
       <_InaPositionIndependent>true</_InaPositionIndependent>
       <_InaPositionIndependent Condition="'$(PositionIndependentExecutable)' == 'false'">false</_InaPositionIndependent>
 
-      <!-- NativeAOT strips symbols by default; StripSymbols=false keeps the symbol table. -->
+      <!-- NativeAOT strips symbols by default; StripSymbols=false keeps the symbol table. Windows has none. -->
       <_InaEmitSymbolTable>false</_InaEmitSymbolTable>
-      <_InaEmitSymbolTable Condition="'$(StripSymbols)' == 'false'">true</_InaEmitSymbolTable>
+      <_InaEmitSymbolTable Condition="'$(StripSymbols)' == 'false' and '$(_InaTargetsWindows)' != 'true'">true</_InaEmitSymbolTable>
+    </PropertyGroup>
+
+    <!--
+      What the original passes to link.exe besides the inputs: /ENTRY, /SUBSYSTEM, /STACK and /MERGE. The runtime
+      locates the managed code by the bounds of its part of the code section, which is why it is merged.
+    -->
+    <PropertyGroup Condition="'$(_InaTargetsWindows)' == 'true'">
+      <_InaEntryPoint>$(EntryPointSymbol)</_InaEntryPoint>
+      <_InaSubsystem>$(LinkerSubsystem)</_InaSubsystem>
+      <_InaStackSize>$(IlcDefaultStackSize)</_InaStackSize>
+      <_InaMergedSections Condition="'$(IlcMergeSections)' != 'false'">.managedcode=.text;hydrated=.bss</_InaMergedSections>
     </PropertyGroup>
 
     <ItemGroup>
       <_InaLinkInput Include="$(NativeObject);@(NativeLibrary)" />
+      <_InaMergedSection Include="$(_InaMergedSections)" />
 
       <_InaLinkOption Include="--linker:$(InaTasksAssembly)" />
       <_InaLinkOption Include="--rid:$(RuntimeIdentifier)" />
@@ -101,6 +168,10 @@
       <_InaLinkOption Include="--exports:$(ExportsFile)" />
       <_InaLinkOption Include="--position-independent:$(_InaPositionIndependent)" />
       <_InaLinkOption Include="--symbol-table:$(_InaEmitSymbolTable)" />
+      <_InaLinkOption Include="--entry:$(_InaEntryPoint)" Condition="'$(_InaEntryPoint)' != ''" />
+      <_InaLinkOption Include="--subsystem:$(_InaSubsystem)" Condition="'$(_InaSubsystem)' != ''" />
+      <_InaLinkOption Include="--stack:$(_InaStackSize)" Condition="'$(_InaStackSize)' != ''" />
+      <_InaLinkOption Include="@(_InaMergedSection->'--merge:%(Identity)')" />
       <_InaLinkOption Include="@(_InaLinkInput)" />
     </ItemGroup>
 
@@ -116,7 +187,7 @@
           Outputs="$(NativeBinary)"
           DependsOnTargets="$(LinkNativeDependsOn);_InaWriteLinkOptions">
 
-    <!-- Arguments for clang cannot be translated, so they are not silently dropped. -->
+    <!-- Arguments for clang or link.exe cannot be translated, so they are not silently dropped. -->
     <Warning Code="INA1005" Condition="'@(LinkerArg)' != ''"
              Text="Ina does not run a native linker, so these linker arguments are ignored: @(LinkerArg, ' ')" />
 
@@ -125,7 +196,11 @@
              RuntimeIdentifier="$(RuntimeIdentifier)"
              ExportsFile="$(ExportsFile)"
              PositionIndependent="$(_InaPositionIndependent)"
-             EmitSymbolTable="$(_InaEmitSymbolTable)" />
+             EmitSymbolTable="$(_InaEmitSymbolTable)"
+             EntryPoint="$(_InaEntryPoint)"
+             Subsystem="$(_InaSubsystem)"
+             StackSize="$(_InaStackSize)"
+             MergedSections="$(_InaMergedSections)" />
   </Target>
 
 </Project>

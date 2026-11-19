@@ -123,6 +123,7 @@ internal sealed class CoffObject
     private const int BigObjHeaderSize = 56;
     private const int SectionHeaderSize = 40;
     private const int RelocationSize = 10;
+    private const int MaxRegularSectionNumber = 0xfeff;
 
     /// <summary>The class id that marks an anonymous object header as a bigobj header.</summary>
     private static ReadOnlySpan<byte> BigObjClassId =>
@@ -215,7 +216,7 @@ internal sealed class CoffObject
             var entry = table.Slice(i * symbolSize, symbolSize);
             var symbolName = LittleEndian.U32(entry, 0) == 0 ? LittleEndian.CString(strings, (int)LittleEndian.U32(entry, 4)) : ShortName(entry[..8]);
             var value = LittleEndian.U32(entry, 8);
-            var sectionNumber = isBigObj ? LittleEndian.I32(entry, 12) : (short)LittleEndian.U16(entry, 12);
+            var sectionNumber = isBigObj ? LittleEndian.I32(entry, 12) : RegularSectionNumber(LittleEndian.U16(entry, 12));
             var storageClass = entry[symbolSize - 2];
             int auxiliaryCount = entry[symbolSize - 1];
             if (sectionNumber > sectionCount || i + auxiliaryCount > count - 1)
@@ -394,6 +395,13 @@ internal sealed class CoffObject
             ? LittleEndian.CString(strings, offset)
             : text;
     }
+
+    /// <summary>
+    /// The section number of a symbol of a regular object. The field is declared as a signed 16-bit number, but
+    /// objects count up to 65279 sections (0xfeff) before compilers switch to the bigobj format, so only the values
+    /// above that are the special negative numbers, like -1 (0xffff) for absolute symbols.
+    /// </summary>
+    private static int RegularSectionNumber(ushort field) => field <= MaxRegularSectionNumber ? field : (short)field;
 
     private static string ShortName(ReadOnlySpan<byte> field)
     {
