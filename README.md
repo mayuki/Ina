@@ -16,9 +16,10 @@ HelloWorld.dll -> /work/HelloWorld.exe (1.1 MB, win-x64, .NET 11.0.0, compile 1.
 ```
 
 > **Status: proof of concept.** Linux executables for x64 and arm64 and Windows executables
-> for x64 work, including cross compilation between all of them: a Windows executable built
-> on Linux is byte-identical to the one built on Windows. Windows on arm64 is implemented
-> but has not been run on real hardware. See [Status](#status) for what is and is not covered.
+> for x64 work, including cross compilation between all of them: from the same assemblies,
+> a Windows executable built on Linux is byte-identical to the one built on Windows. Windows
+> on arm64 is implemented but has not been run on real hardware. See [Status](#status) for
+> what is and is not covered.
 
 ## How it works
 
@@ -126,7 +127,7 @@ no runtime code generation, reflection only where the compiler can see it, and
 | Hosts | Anywhere ILCompiler runs. Developed and tested on `linux-x64` and `win-x64`; other hosts are untested |
 | Frameworks | Applications that target .NET 10 or .NET 11; each is compiled with the packs of its own version. The tool itself runs on .NET 11 |
 | Verified | Console apps, multi-assembly apps, `System.Text.Json`, exceptions, GC, threads and tasks, thread statics, file I/O, sockets, HTTPS, compression, crypto (OpenSSL on Linux, the system providers on Windows) |
-| Cross compilation | Linux to Windows and Windows to Linux, x64 to arm64. Windows executables built on Linux and on Windows are byte-identical |
+| Cross compilation | Linux to Windows and Windows to Linux, x64 to arm64. Given the same assemblies, Windows executables built on Linux and on Windows are byte-identical |
 | Self-hosting | `ina` compiles itself for Linux and for Windows: the native `ina` builds applications for both systems, and rebuilding itself with it yields a byte-identical executable |
 
 Not done yet:

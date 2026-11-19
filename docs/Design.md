@@ -421,10 +421,15 @@ What has been verified, and how:
   startup internals of the static C runtime on one side and `memcpy`, `memmove`,
   `memset`, `_purecall` and `__C_specific_handler` (imported instead of linked
   statically) on the other.
-- Cross compilation to Windows: the Linux-native `ina` produced `HelloWorld` and
-  `RuntimeTour` for `win-x64` on a Linux system without .NET SDK, compiler or Windows SDK
-  (Ubuntu under WSL). The executables are byte-identical to those built on Windows and
-  run there.
+- Building for Windows on Linux: the complete test suite passes on Linux from a clean
+  checkout of the repository, which includes linking the samples for `win-x64` and
+  `win-arm64`. The samples built there for `win-x64` - by the managed tool, and by the
+  Linux-native `ina` without any .NET installation - run on Windows and behave like the
+  regular runtime. Given the same IL assemblies, the executables for both architectures
+  are byte-identical to those built on Windows. The Linux system was Ubuntu 26.04 with
+  neither a compiler nor Wine nor anything of the Windows SDK; the checkout, the .NET SDK
+  and all caches were on its own file system, and the environment of the build had no
+  access to Windows programs.
 - Self-hosting: `ina` compiled by itself builds the samples, for Linux and for Windows,
   and compiling itself again with the native tool produces a byte-identical executable
   on both systems. The native tools also download and unpack the packs themselves, which
@@ -441,6 +446,10 @@ Not verified:
   and the imports were checked against the arm64 import libraries of the Windows SDK
   (except for the five functions that come from the Universal C Runtime instead of the
   static C runtime). No executable has been started on Windows on ARM64.
+- **A Linux machine of its own for the Windows targets.** The Linux system above was a
+  WSL 2 virtual machine on the Windows development machine. It runs a real Linux kernel
+  and the build was isolated from Windows, but a Linux installation on separate hardware
+  (or a hosted CI runner) has not built the Windows targets yet.
 - **Older Windows versions.** The executables were run on Windows 11 only. The import
   table was generated from the DLLs of Windows 11; the runtime only references functions
   that exist on Windows 10, but this has not been tested.
