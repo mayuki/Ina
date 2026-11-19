@@ -49,7 +49,10 @@ public sealed record BuildResult(
 /// </summary>
 public sealed class BuildPipeline(PackageStore packages, ILogger logger)
 {
-    /// <summary>Runtime libraries in link order. Entries marked optional do not exist for every architecture.</summary>
+    /// <summary>
+    /// Runtime libraries in link order. Entries marked optional do not exist for every architecture, and
+    /// <c>{crypto}</c> stands for the cryptography library of the target platform.
+    /// </summary>
     private static readonly (string Name, bool Required)[] NativeLibraries =
     [
         ("libbootstrapper.o", true),
@@ -63,7 +66,7 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
         ("libSystem.Globalization.Native.a", true),
         ("libSystem.IO.Compression.Native.a", true),
         ("libSystem.Net.Security.Native.a", true),
-        ("libSystem.Security.Cryptography.Native.OpenSsl.a", true),
+        ("lib{crypto}.a", true),
         ("libz.a", false),
         ("libbrotlienc.a", false),
         ("libbrotlidec.a", false),
@@ -84,6 +87,12 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
         var frameworkVersion = app.FrameworkVersion
             ?? ParseRequestedFramework(options.RuntimeVersion)
             ?? throw new InaException($"Could not determine the target framework of {app.Path}. Pass --runtime-version.");
+
+        var isMacOS = options.Target.OperatingSystem == TargetOperatingSystem.MacOS;
+        if (isMacOS && !options.PositionIndependent)
+        {
+            throw new InaException("macOS executables are always position independent. Fixed-address executables are only available for Linux.");
+        }
 
         var outputPath = Path.GetFullPath(options.OutputPath ?? app.Name);
         if (Directory.Exists(outputPath))
@@ -134,18 +143,19 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
             logger.LogInformation("Linking {Output}", outputPath);
             try
             {
-                link = ElfLinker.Link(
-                    new LinkOptions
-                    {
-                        OutputPath = outputPath,
-                        Architecture = options.Target.Architecture,
-                        Imports = ImportLibrarySet.ForGlibc(options.Target.Architecture),
-                        Inputs = [LinkInput.FromFile(objectPath), .. CollectNativeLibraries(packs)],
-                        PositionIndependent = options.PositionIndependent,
-                        EmitSymbolTable = options.EmitSymbolTable,
-                        ExportedSymbols = [IlcArguments.DebugHeaderSymbol],
-                    },
-                    logger);
+                // The object format follows from the operating system: Mach-O for macOS, ELF for Linux. Either way
+                // the system libraries are represented by an import table, never by files of the target system.
+                var linkOptions = new LinkOptions
+                {
+                    OutputPath = outputPath,
+                    Architecture = options.Target.Architecture,
+                    Imports = isMacOS ? ImportLibrarySet.ForMacOS(options.Target.Architecture) : ImportLibrarySet.ForGlibc(options.Target.Architecture),
+                    Inputs = [LinkInput.FromFile(objectPath), .. CollectNativeLibraries(packs)],
+                    PositionIndependent = options.PositionIndependent,
+                    EmitSymbolTable = options.EmitSymbolTable,
+                    ExportedSymbols = [IlcArguments.DebugHeaderSymbol],
+                };
+                link = isMacOS ? MachOLinker.Link(linkOptions, logger) : ElfLinker.Link(linkOptions, logger);
             }
             catch (LinkerException e)
             {
@@ -185,8 +195,9 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
     private static List<LinkInput> CollectNativeLibraries(RuntimePacks packs)
     {
         var inputs = new List<LinkInput>();
-        foreach (var (name, required) in NativeLibraries)
+        foreach (var (pattern, required) in NativeLibraries)
         {
+            var name = pattern.Replace("{crypto}", packs.Target.CryptographyLibrary, StringComparison.Ordinal);
             var path = Path.Combine(packs.NativeDirectory, name);
             if (File.Exists(path))
             {

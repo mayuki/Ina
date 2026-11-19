@@ -16,6 +16,20 @@ internal static class TestEnvironment
     /// <summary>Whether executables built for x86-64 Linux can be run on this machine.</summary>
     public static bool CanRunLinuxX64 => OperatingSystem.IsLinux() && RuntimeInformation.ProcessArchitecture == Architecture.X64;
 
+    /// <summary>The translation layer that lets Apple silicon Macs run x86-64 programs.</summary>
+    private const string RosettaRuntime = "/Library/Apple/usr/libexec/oah/libRosettaRuntime";
+
+    /// <summary>Whether executables built for Apple silicon Macs can be run on this machine.</summary>
+    public static bool CanRunMacOSArm64 => OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+
+    /// <summary>Whether executables built for Intel Macs can be run on this machine: natively, or through Rosetta.</summary>
+    public static bool CanRunMacOSX64 =>
+        OperatingSystem.IsMacOS() && (RuntimeInformation.ProcessArchitecture == Architecture.X64 || File.Exists(RosettaRuntime));
+
+    /// <summary>Whether executables built for macOS on the given architecture can be run on this machine.</summary>
+    public static bool CanRunMacOS(Ina.Linker.TargetArchitecture architecture) =>
+        architecture == Ina.Linker.TargetArchitecture.Arm64 ? CanRunMacOSArm64 : CanRunMacOSX64;
+
     private const string Arm64Emulator = "qemu-aarch64";
     private const string Arm64SystemRoot = "/usr/aarch64-linux-gnu";
 

@@ -15,12 +15,11 @@ var outputOption = new Option<string?>("--output", "-o")
 {
     Description = "Path of the executable to write [default: the assembly name in the current directory]",
 };
-var osOption = new Option<string>("--os")
+var osOption = new Option<string?>("--os")
 {
-    Description = "Target operating system",
-    DefaultValueFactory = static _ => "linux",
+    Description = "Target operating system: linux or macos [default: the operating system of this machine if it is one of them, otherwise linux]",
 };
-osOption.AcceptOnlyFromAmong("linux");
+osOption.AcceptOnlyFromAmong("linux", "macos", "osx");
 var archOption = new Option<string?>("--arch")
 {
     Description = "Target architecture: x64 or arm64 [default: the architecture of this machine]",
@@ -46,7 +45,7 @@ var symbolsOption = new Option<bool>("--symbols")
 };
 var noPieOption = new Option<bool>("--no-pie")
 {
-    Description = "Produce a fixed-address executable instead of a position independent one",
+    Description = "Produce a fixed-address executable instead of a position independent one (Linux only)",
 };
 var intermediateOption = new Option<string?>("--intermediate-dir")
 {
@@ -108,7 +107,7 @@ root.SetAction(async (parseResult, cancellationToken) =>
         Console.Out.WriteLine(
             $"{Path.GetFileName(options.AssemblyPath)} -> {result.OutputPath} " +
             $"({result.OutputSize / 1024.0 / 1024.0:F1} MB, {options.Target.RuntimeIdentifier}, .NET {result.RuntimeVersion}" +
-            $"{Summary.MinimumCLibrary(result.Link.RequiredVersions)}, " +
+            $"{Summary.MinimumSystem(result.Link.RequiredVersions)}, " +
             $"compile {result.CompileTime.TotalSeconds:F1}s, link {result.LinkTime.TotalSeconds:F2}s)");
         return 0;
     }

@@ -36,12 +36,27 @@ public class IlcArgumentsTests
     }
 
     [Fact]
+    public void MacOSTargetUsesTheNamesAndLibrariesOfThatPlatform()
+    {
+        var arguments = IlcArguments.Build(Options with { Target = new TargetPlatform(TargetOperatingSystem.MacOS, TargetArchitecture.Arm64) });
+
+        Assert.Contains("--targetos:osx", arguments);
+        Assert.Contains("--targetarch:arm64", arguments);
+        Assert.Contains("--runtimeknob:RUNTIME_IDENTIFIER=osx-arm64", arguments);
+
+        // Cryptography is implemented on top of Apple's frameworks instead of OpenSSL.
+        Assert.Contains("--directpinvoke:System.Security.Cryptography.Native.Apple", arguments);
+        Assert.DoesNotContain("--directpinvoke:System.Security.Cryptography.Native.OpenSsl", arguments);
+    }
+
+    [Fact]
     public void FrameworkNativeLibrariesAreCalledDirectlyBecauseTheyAreLinkedStatically()
     {
         var arguments = IlcArguments.Build(Options);
 
         Assert.Contains("--directpinvoke:System.Native", arguments);
         Assert.Contains("--directpinvoke:System.Globalization.Native", arguments);
+        Assert.Contains("--directpinvoke:System.Security.Cryptography.Native.OpenSsl", arguments);
         Assert.Contains("--initassembly:System.Private.CoreLib", arguments);
         Assert.Contains("--export-dynamic-symbol:DotNetRuntimeDebugHeader", arguments);
     }

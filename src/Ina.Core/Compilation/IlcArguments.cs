@@ -80,11 +80,13 @@ public static class IlcArguments
         "System.Private.CoreLib", "System.Private.StackTraceMetadata", "System.Private.TypeLoader", "System.Private.Reflection.Execution",
     ];
 
-    /// <summary>Native libraries of the framework that are linked statically, so P/Invokes into them become direct calls.</summary>
+    /// <summary>
+    /// Native libraries of the framework that are linked statically, so P/Invokes into them become direct calls.
+    /// The cryptography library of the target platform is added to them.
+    /// </summary>
     private static readonly string[] DirectPInvokeLibraries =
     [
         "System.Native", "System.Globalization.Native", "System.IO.Compression.Native", "System.Net.Security.Native",
-        "System.Security.Cryptography.Native.OpenSsl",
     ];
 
     /// <summary>The symbol through which diagnostic tools find the runtime; it stays visible in the executable.</summary>
@@ -117,7 +119,7 @@ public static class IlcArguments
 
         arguments.Add($"--export-dynamic-symbol:{DebugHeaderSymbol}");
         arguments.AddRange(InitAssemblies.Select(static assembly => $"--initassembly:{assembly}"));
-        arguments.AddRange(DirectPInvokeLibraries.Select(static library => $"--directpinvoke:{library}"));
+        arguments.AddRange(DirectPInvokeLibraries.Append(options.Target.CryptographyLibrary).Select(static library => $"--directpinvoke:{library}"));
 
         var knobs = MergeKnobs(options.RuntimeKnobs);
         foreach (var (name, value) in knobs)
