@@ -154,12 +154,27 @@ public sealed class PackageStore : IDisposable
             MakeToolsExecutable(staging);
             await File.WriteAllTextAsync(Path.Combine(staging, ".ina-complete"), string.Empty, cancellationToken).ConfigureAwait(false);
 
+            // Builds that start at the same time all find the package missing and download it. The first one to
+            // finish wins; its copy may already be in use, so the others must not replace it.
+            if (IsComplete(destination))
+            {
+                return;
+            }
+
             if (Directory.Exists(destination))
             {
+                // Left behind by an interrupted download.
                 Directory.Delete(destination, recursive: true);
             }
 
-            Directory.Move(staging, destination);
+            try
+            {
+                Directory.Move(staging, destination);
+            }
+            catch (IOException) when (IsComplete(destination))
+            {
+                // Another process finished between the check and the move.
+            }
         }
         catch (HttpRequestException e)
         {

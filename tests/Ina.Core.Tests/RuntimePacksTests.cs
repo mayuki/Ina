@@ -146,6 +146,26 @@ public class RuntimePacksTests
         Assert.Equal(["1.0.0"], store.InstalledVersions("Some.Package"));
     }
 
+    [Fact]
+    public async Task PackageInstalledByAnotherProcessInTheMeantimeIsLeftAlone()
+    {
+        using var directory = new TemporaryDirectory();
+        var handler = new FeedHandler();
+        handler.AddPackage("Some.Package", "1.0.0", ("content.txt", "downloaded here"));
+
+        // Two builds that start at the same time both find the package missing. While this one downloads, the
+        // other one finishes and starts to use its copy.
+        handler.BeforeResponse = () => directory.CreateFile(Path.Combine("cache", "some.package", "1.0.0", ".ina-complete"));
+        handler.BeforeResponse += () => directory.CreateFile(Path.Combine("cache", "some.package", "1.0.0", "content.txt"), "installed by the other process");
+        using var store = new PackageStore(directory.Combine("cache"), [], Feed, NullLogger.Instance, handler);
+
+        var package = await store.GetPackageDirectoryAsync("Some.Package", "1.0.0", TestContext.Current.CancellationToken);
+
+        // Replacing the directory would pull the files away from under the other process.
+        Assert.Equal("installed by the other process", File.ReadAllText(Path.Combine(package, "content.txt")));
+        Assert.Equal(["1.0.0"], Directory.EnumerateDirectories(directory.Combine("cache", "some.package")).Select(Path.GetFileName));
+    }
+
     /// <summary>Lays out a package the way NuGet extracts it into the global packages folder.</summary>
     private static void InstallPackage(TemporaryDirectory directory, string root, string id, string version)
     {
@@ -165,6 +185,9 @@ public class RuntimePacksTests
         private readonly Dictionary<string, byte[]> _responses = new(StringComparer.Ordinal);
 
         public List<string> Requests { get; } = [];
+
+        /// <summary>Runs before a request is answered, to simulate what happens elsewhere during a download.</summary>
+        public Action? BeforeResponse { get; set; }
 
         public void AddVersions(string id, params string[] versions)
         {
@@ -192,6 +215,7 @@ public class RuntimePacksTests
         {
             var url = request.RequestUri!.ToString();
             Requests.Add(url);
+            BeforeResponse?.Invoke();
             return Task.FromResult(_responses.TryGetValue(url, out var content)
                 ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) }
                 : new HttpResponseMessage(HttpStatusCode.NotFound));
