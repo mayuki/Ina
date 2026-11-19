@@ -37,9 +37,8 @@ HelloWorld.dll -> /work/HelloWorld (1.3 MB, osx-arm64, .NET 11.0.0, macOS 14.0+,
 > **Status: proof of concept.** Linux and macOS executables for x64 and arm64 and Windows
 > executables for x64 work, including cross compilation: from the same assemblies, a
 > Windows executable built on Linux is byte-identical to the one built on Windows. Windows
-> on arm64 is implemented but has not been run on real hardware. macOS was verified with
-> .NET 10; with .NET 11 the macOS executables are built and inspected, but running them is
-> not recorded yet. See [Status](#status) for what is and is not covered.
+> on arm64 is implemented but has not been run on real hardware, and macOS executables for
+> x64 have not been run either. See [Status](#status) for what is and is not covered.
 
 ## How it works
 
@@ -244,25 +243,26 @@ such as ASP.NET Core are published with `dotnet publish`.
 | | |
 |---|---|
 | Targets | `linux-x64`, `linux-arm64` (glibc), position independent or fixed-address executables; `osx-x64`, `osx-arm64` (macOS 12 and later with .NET 10, macOS 14 and later with .NET 11); with the `ina` command also `win-x64`, `win-arm64` (Windows 10 and later), relocatable or fixed-address executables |
-| Hosts | Anywhere ILCompiler runs. Developed and tested on `linux-x64` and `win-x64`, and before the update to .NET 11 on `linux-arm64` and `osx-arm64` |
+| Hosts | Anywhere ILCompiler runs. Developed and tested on `linux-x64`, `win-x64` and `osx-arm64`, and before the update to .NET 11 on `linux-arm64` |
 | Frameworks | Applications that target .NET 10 or .NET 11; each is compiled with the packs of its own version. The tool and the SDK themselves run on .NET 11 |
-| Verified | Console apps, multi-assembly apps, `System.Text.Json`, exceptions, GC (workstation and server), threads and tasks, thread statics, file I/O, sockets, HTTPS, compression, crypto (OpenSSL on Linux, Apple's frameworks on macOS, the system providers on Windows). With `dotnet publish` also an ASP.NET Core minimal API. For macOS all of this with .NET 10 only, see below |
+| Verified | Console apps, multi-assembly apps, `System.Text.Json`, exceptions, GC (workstation and server), threads and tasks, thread statics, file I/O, sockets, HTTPS, compression, crypto (OpenSSL on Linux, Apple's frameworks on macOS, the system providers on Windows). With `dotnet publish` also an ASP.NET Core minimal API |
 | Cross compilation | Linux to Windows and Windows to Linux, Linux to macOS, x64 to arm64. Given the same assemblies, Windows executables built on Linux and on Windows are byte-identical, and so are macOS executables built on Linux and on a Mac |
-| Self-hosting | `ina` compiles itself for Linux and for Windows, and with .NET 10 for macOS: the native `ina` builds applications, and rebuilding itself with it yields a byte-identical executable |
+| Self-hosting | `ina` compiles itself for Linux, macOS and Windows: the native `ina` builds applications, and rebuilding itself with it yields a byte-identical executable (compared for macOS with .NET 10 only) |
 
-**macOS and .NET 11.** macOS was verified with the .NET 10 runtime, before this
-repository moved to .NET 11: all of the above on an Apple silicon Mac, while `osx-x64`
-executables were compared instruction by instruction with what Apple's linker produces
-from the same inputs but not run. For .NET 11 the import tables were regenerated on a Mac,
+**macOS and .NET 11.** macOS was first verified with the .NET 10 runtime, before this
+repository moved to .NET 11. For .NET 11 the import tables were regenerated on a Mac,
 because its runtime uses more of CryptoKit, the Swift libraries, Network.framework and
-Security.framework. With the .NET 11 packs the samples, the ASP.NET Core sample and `ina`
-itself are built for macOS on Linux and on Windows, and the tests inspect the
-executables; that they were run on a Mac is not recorded yet. See
+Security.framework, and the test suite passes on an Apple silicon Mac: the samples, the
+ASP.NET Core sample and `ina` compiled by itself are built and run there. Three things
+were only done with .NET 10: the comparison with what Apple's linker produces from the
+same inputs, the comparison of executables built on Linux and on a Mac, and a larger
+program that exercises cryptography and TLS. See
 [Verification](docs/Design.md#10-verification).
 
 Not done yet:
 
-- **Running macOS executables that were built with .NET 11**, as described above
+- **Running `osx-x64` executables.** They have been compared instruction by instruction
+  with what Apple's linker produces from the same inputs, but the Mac has no Rosetta
 - **Running `win-arm64` executables.** They are linked, checked structurally and their
   generated code is executed in an emulator by the tests, but no Windows on ARM64 machine
   was available
