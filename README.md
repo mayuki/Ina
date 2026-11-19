@@ -104,10 +104,15 @@ The application is compiled the way `PublishAot` compiles it, so the same rules 
 to both ways of using Ina: no runtime code generation, reflection only where the compiler
 can see it, and `System.Text.Json` through source generation (see `samples/JsonReader`).
 
+Ina comes as two packages on nuget.org, released together under one version:
+[`Ina.Sdk`](https://www.nuget.org/packages/Ina.Sdk) plugs into `dotnet publish`, and
+[`Ina`](https://www.nuget.org/packages/Ina) is the `ina` command, a .NET tool.
+
 ### Publishing a project with `dotnet publish`
 
 `Ina.Sdk` is an MSBuild project SDK that is used in addition to the .NET SDK. A project
-refers to it and sets `PublishIna`:
+refers to it and sets `PublishIna`. NuGet restores the SDK from nuget.org along with the
+project, so nothing has to be installed beforehand:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -177,26 +182,21 @@ it runs on the Mac it is copied to without further steps. A Windows executable d
 nothing but DLLs that are part of Windows, whichever system it was published on: publishing
 for Windows needs neither Visual Studio nor the Windows SDK.
 
-`Ina.Sdk` is not on nuget.org. To try it, pack it and add the folder as a package source:
-
-```console
-$ dotnet pack src/Ina.Sdk -c Release -o artifacts
-$ dotnet nuget add source /path/to/Ina/artifacts --name ina
-```
-
 ### Compiling an assembly with the `ina` command
 
+`ina` is installed as a .NET tool (a package of about 680 KB), either for the user:
+
 ```console
-$ dotnet build                                   # builds ina into src/Ina/bin
-$ dotnet src/Ina/bin/Debug/net11.0/ina.dll --help
+$ dotnet tool install --global Ina
+$ ina --help
 ```
 
-`ina` can also be packaged and installed as a local .NET tool (a package of about 680 KB):
+or as a local tool of a repository, which records the version in the tool manifest of
+the repository:
 
 ```console
-$ dotnet pack src/Ina -c Release -o artifacts
-$ cd ../MyApp && dotnet new tool-manifest
-$ dotnet tool install Ina --add-source ../Ina/artifacts --version 0.1.0
+$ dotnet new tool-manifest                       # if the repository has none yet
+$ dotnet tool install Ina
 $ dotnet ina bin/Release/net11.0/MyApp.dll
 ```
 
@@ -338,6 +338,32 @@ of the same assemblies on Windows yields the same bytes; samples published for W
 include running `win-arm64` executables, are enabled for public repositories; a private
 repository opts in with the repository variable `ARM64_RUNNERS=true`. No job runs on a Mac:
 macOS executables are built and inspected on the Linux and Windows machines, not run.
+
+### Trying the tool and the packages from the source tree
+
+`ina` runs straight from the build output:
+
+```console
+$ dotnet build                                   # builds ina into src/Ina/bin
+$ dotnet src/Ina/bin/Debug/net11.0/ina.dll --help
+```
+
+To try the packages as they will be released, pack them into a folder and add the folder
+as a package source. Give them a version that no release uses, such as one with a
+pre-release label: NuGet keeps every version it has restored in the global packages folder
+and uses that copy from then on, whichever source it came from.
+
+```console
+$ dotnet pack src/Ina.Sdk -c Release -o artifacts -p:PackageVersion=0.1.0-dev
+$ dotnet pack src/Ina -c Release -o artifacts -p:PackageVersion=0.1.0-dev
+$ dotnet nuget add source /path/to/Ina/artifacts --name ina
+```
+
+A project then refers to `<Sdk Name="Ina.Sdk" Version="0.1.0-dev" />`, and the tool is
+installed with `dotnet tool install Ina --version 0.1.0-dev`. For the same reason, a
+package that is packed again after a change needs another version, or the old one has to
+be removed from the global packages folder (`dotnet nuget locals global-packages --list`
+shows where it is).
 
 ### Trying `Ina.Sdk` without packaging it
 
