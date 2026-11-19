@@ -4,9 +4,8 @@
     <RootNamespace>Ina.Linker</RootNamespace>
   </PropertyGroup>
 
-
   <ItemGroup>
-    <!-- Import tables of the supported C libraries; see eng/generate-abi.sh. -->
+    <!-- Import tables of the supported C libraries and of Windows; see eng/generate-abi.sh and eng/GenerateWindowsAbi.cs. -->
     <EmbeddedResource Include="Abi\Tables\*.abi" LogicalName="Ina.Linker.Abi.%(Filename).abi" />
   </ItemGroup>
 

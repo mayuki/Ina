@@ -5,7 +5,10 @@ using Ina.Linker.Elf;
 
 namespace Ina.Linker.Input;
 
-/// <summary>A static library in the System V / GNU <c>ar</c> format.</summary>
+/// <summary>
+/// A static library in the <c>ar</c> format, as written by GNU and LLVM tools (System V flavor) and by the Microsoft
+/// librarian. The two differ in details of the member names and in an additional index of Microsoft libraries.
+/// </summary>
 internal sealed class ArchiveFile
 {
     private const int HeaderSize = 60;
@@ -15,6 +18,7 @@ internal sealed class ArchiveFile
     private readonly Dictionary<string, int> _symbolToMember = new(StringComparer.Ordinal);
     private readonly HashSet<int> _loadedMembers = [];
     private ReadOnlyMemory<byte> _longNames;
+    private Func<string, ReadOnlyMemory<byte>, IEnumerable<string>> _definedSymbols = ElfDefinedSymbols;
 
     private ArchiveFile(string name, ReadOnlyMemory<byte> data)
     {
@@ -26,7 +30,12 @@ internal sealed class ArchiveFile
 
     public static bool IsArchive(ReadOnlySpan<byte> data) => data.StartsWith(Magic);
 
-    public static ArchiveFile Parse(string name, ReadOnlyMemory<byte> data)
+    /// <param name="definedSymbols">
+    /// Lists the global symbols that a member defines. It is only used for archives without a symbol index and
+    /// defaults to reading the members as ELF objects.
+    /// </param>
+    public static ArchiveFile Parse(
+        string name, ReadOnlyMemory<byte> data, Func<string, ReadOnlyMemory<byte>, IEnumerable<string>>? definedSymbols = null)
     {
         if (!IsArchive(data.Span))
         {
@@ -34,6 +43,11 @@ internal sealed class ArchiveFile
         }
 
         var archive = new ArchiveFile(name, data);
+        if (definedSymbols is not null)
+        {
+            archive._definedSymbols = definedSymbols;
+        }
+
         archive.ReadIndex();
         return archive;
     }
@@ -82,8 +96,13 @@ internal sealed class ArchiveFile
             var body = _data.Slice(offset + HeaderSize, size);
             if (rawName == "/")
             {
-                ReadSymbolTable(body.Span, wide: false);
-                hasSymbolTable = true;
+                // Microsoft libraries have a second index of the same name in a different layout; the first one
+                // has the format that all tools share.
+                if (!hasSymbolTable)
+                {
+                    ReadSymbolTable(body.Span, wide: false);
+                    hasSymbolTable = true;
+                }
             }
             else if (rawName == "/SYM64/")
             {
@@ -143,20 +162,30 @@ internal sealed class ArchiveFile
         while (offset + HeaderSize <= _data.Length)
         {
             var (name, data) = ReadMember(offset);
-            if (ObjectFile.IsElf(data.Span))
+            foreach (var symbol in _definedSymbols($"{Name}({name})", data))
             {
-                var file = ObjectFile.Parse($"{Name}({name})", data, static _ => true);
-                for (var i = file.FirstGlobalSymbol; i < file.ElfSymbols.Length; i++)
-                {
-                    var symbol = file.ElfSymbols[i];
-                    if (!symbol.IsUndefined)
-                    {
-                        _symbolToMember.TryAdd(symbol.Name, offset);
-                    }
-                }
+                _symbolToMember.TryAdd(symbol, offset);
             }
 
             offset = NextMemberOffset(offset, data.Length);
+        }
+    }
+
+    private static IEnumerable<string> ElfDefinedSymbols(string name, ReadOnlyMemory<byte> data)
+    {
+        if (!ObjectFile.IsElf(data.Span))
+        {
+            yield break;
+        }
+
+        var file = ObjectFile.Parse(name, data, static _ => true);
+        for (var i = file.FirstGlobalSymbol; i < file.ElfSymbols.Length; i++)
+        {
+            var symbol = file.ElfSymbols[i];
+            if (!symbol.IsUndefined)
+            {
+                yield return symbol.Name;
+            }
         }
     }
 
@@ -184,13 +213,13 @@ internal sealed class ArchiveFile
         var name = rawName;
         if (rawName.Length > 1 && rawName[0] == '/' && char.IsAsciiDigit(rawName[1]))
         {
-            // "/<offset>" refers to the long name table, where names end with "/\n".
+            // "/<offset>" refers to the long name table, where names end with "/\n" (GNU) or a NUL (Microsoft).
             var nameOffset = int.Parse(rawName.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture);
             var longNames = _longNames.Span;
             if (nameOffset < longNames.Length)
             {
                 var rest = longNames[nameOffset..];
-                var end = rest.IndexOf((byte)'\n');
+                var end = rest.IndexOfAny((byte)'\n', (byte)0);
                 name = Encoding.UTF8.GetString(end < 0 ? rest : rest[..end]).TrimEnd('/');
             }
         }

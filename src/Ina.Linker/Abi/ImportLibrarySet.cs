@@ -70,6 +70,12 @@ public sealed class ImportLibrarySet
         _ => throw new LinkerException($"no import table for architecture {architecture}"),
     });
 
+    /// <summary>
+    /// Returns the import table of Windows: the system DLLs that a NativeAOT program links against and the names
+    /// they export. It is the same for all architectures.
+    /// </summary>
+    public static ImportLibrarySet ForWindows() => LoadEmbedded("windows");
+
     /// <summary>Loads an embedded import table by name, e.g. <c>glibc-x64</c>.</summary>
     public static ImportLibrarySet LoadEmbedded(string name)
     {
