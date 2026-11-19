@@ -27,7 +27,7 @@ jobs:
   # Nothing is published from a commit that does not pass what every change has to pass.
   ci:
     name: CI
-    uses: ./.github/workflows/ci.yml
+    uses: ./.github/workflows/ci.yaml
 
   pack:
     name: Pack

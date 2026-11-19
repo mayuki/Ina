@@ -326,7 +326,7 @@ Tests whose executables can not be run are skipped; the tests that inspect the s
 of the produced images run everywhere. The first run of the end-to-end tests downloads the
 ILCompiler and runtime packs, and the runtime pack of ASP.NET Core.
 
-`.github/workflows/ci.yml` runs the test suite on Linux and Windows machines of GitHub. It
+`.github/workflows/ci.yaml` runs the test suite on Linux and Windows machines of GitHub. It
 also builds the samples for Windows on Linux, runs them on Windows, and checks that a build
 of the same assemblies on Windows yields the same bytes; samples published for Windows with
 `dotnet publish` on Linux are run on Windows as well. The jobs on arm64 machines, which
@@ -386,7 +386,7 @@ $ git tag v0.1.0
 $ git push origin v0.1.0
 ```
 
-`.github/workflows/release.yml` then runs the jobs of the continuous integration on the
+`.github/workflows/release.yaml` then runs the jobs of the continuous integration on the
 tagged commit, packs both packages in the Release configuration, pushes them to nuget.org
 and creates a GitHub release with the packages attached, whose notes GitHub generates from
 the changes since the previous release. A tag that names another version fails before
@@ -397,7 +397,7 @@ The packages are pushed with [Trusted Publishing](https://learn.microsoft.com/nu
 so the repository holds no API key. It has to be set up once:
 
 - On nuget.org, a Trusted Publishing policy of the account that owns the packages, with
-  the repository owner `mayuki`, the repository `Ina`, the workflow file `release.yml` and
+  the repository owner `mayuki`, the repository `Ina`, the workflow file `release.yaml` and
   the environment `nuget`.
 - In the repository, the secret `NUGET_USER` with the name of that account on nuget.org
   (the profile name, not the e-mail address).

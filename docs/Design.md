@@ -829,7 +829,7 @@ switched off for these commands: the samples treat warnings as errors, and an ad
 the compiler package of the installed .NET SDK would fail every publish for a reason that
 has nothing to do with Ina.
 
-The continuous integration (`.github/workflows/ci.yml`) runs the suite on hosted Linux and
+The continuous integration (`.github/workflows/ci.yaml`) runs the suite on hosted Linux and
 Windows machines, where between them every kind of executable except those for macOS can
 be run, and adds a check across machines: the samples are built for Windows on Linux, run
 on Windows, and compared with a build of the same assemblies on Windows.
