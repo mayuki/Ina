@@ -5,14 +5,16 @@ namespace Ina.EndToEnd.Tests;
 
 /// <summary>
 /// Compiles the sample applications for Windows with the full pipeline. Building needs neither Windows nor its
-/// SDK, so that part runs on every host; the executables are run when the host is an x64 Windows machine, with
-/// the regular .NET runtime executing the same assembly as the reference.
+/// SDK, so that part runs on every host; the executables are run when the host is a Windows machine of their
+/// architecture, with the regular .NET runtime executing the same assembly as the reference.
 /// </summary>
 public class WindowsApplicationTests
 {
     private static readonly TargetPlatform WindowsX64 = new(TargetOperatingSystem.Windows, TargetArchitecture.X64);
+    private static readonly TargetPlatform WindowsArm64 = new(TargetOperatingSystem.Windows, TargetArchitecture.Arm64);
 
     private const string CanNotRun = "Running the executable requires an x64 Windows host.";
+    private const string CanNotRunArm64 = "Running the executable requires a Windows on ARM64 host.";
 
     [Fact]
     public async Task HelloWorldIsBuiltForWindowsOnAnyHost()
@@ -64,14 +66,34 @@ public class WindowsApplicationTests
     {
         using var directory = new OutputDirectory();
 
-        var build = await TestEnvironment.BuildAsync(
-            TestEnvironment.SampleAssembly("HelloWorld", "HelloWorld"), directory.Path, new TargetPlatform(TargetOperatingSystem.Windows, TargetArchitecture.Arm64));
+        var build = await TestEnvironment.BuildAsync(TestEnvironment.SampleAssembly("HelloWorld", "HelloWorld"), directory.Path, WindowsArm64);
 
-        // The machine type of the PE header: IMAGE_FILE_MACHINE_ARM64. The executable is not run: that needs
-        // Windows on ARM64, and the parts that the linker contributes are covered by the emulator tests of the linker.
+        // The machine type of the PE header: IMAGE_FILE_MACHINE_ARM64.
         var image = await File.ReadAllBytesAsync(build.OutputPath, TestContext.Current.CancellationToken);
         Assert.Equal(0xaa64, BitConverter.ToUInt16(image, BitConverter.ToInt32(image, 0x3c) + 4));
         Assert.Contains("GetStdHandle", build.Link.ImportedSymbols);
+
+        // Elsewhere the parts that the linker contributes are covered by the emulator tests of the linker.
+        Assert.SkipUnless(TestEnvironment.CanRunWindowsArm64, CanNotRunArm64);
+        var run = await TestEnvironment.RunAsync(build.OutputPath, "from", "arm64");
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal($"Hello, World!{Environment.NewLine}Arguments: from, arm64{Environment.NewLine}", run.Output);
+    }
+
+    [Fact]
+    public async Task RuntimeFeaturesWorkOnArm64()
+    {
+        Assert.SkipUnless(TestEnvironment.CanRunWindowsArm64, CanNotRunArm64);
+        using var directory = new OutputDirectory();
+        var assembly = TestEnvironment.SampleAssembly("RuntimeTour", "RuntimeTour");
+
+        var build = await TestEnvironment.BuildAsync(assembly, directory.Path, WindowsArm64);
+        var native = await TestEnvironment.RunAsync(build.OutputPath);
+        var reference = await TestEnvironment.RunOnJitAsync(assembly);
+
+        Assert.True(native.ExitCode == 0, native.Output + native.Error);
+        Assert.Contains("All checks passed.", native.Output);
+        Assert.Equal(CommonLines(reference.Output), CommonLines(native.Output));
     }
 
     [Fact]

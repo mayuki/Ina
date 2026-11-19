@@ -28,6 +28,29 @@ public class PeArm64Tests : PeLinkerTestBase
     }
 
     [Fact]
+    public void ProgramRunsOnWindowsOnArm64()
+    {
+        // The one test here that needs the real thing: startup code, imports and exit as Windows executes them.
+        var builder = new CoffObjectBuilder(CoffMachine.Arm64);
+        var message = builder.ReadOnlyData(".rdata", "hello from ina\0"u8);
+        var text = builder.Text(".text$mn", Code.Arm64(
+            0xa9bf7bfd, // stp  x29, x30, [sp, #-16]!
+            0x910003fd, // mov  x29, sp
+            0x90000000, // adrp x0, message
+            0x91000000, // add  x0, x0, :lo12:message
+            0x94000000, // bl   puts
+            0x52800540, // mov  w0, #42
+            0xa8c17bfd, // ldp  x29, x30, [sp], #16
+            Ret));
+        builder.External("wmain", text);
+        builder.Relocate(text, 8, RelArm64.PageBaseRel21, message);
+        builder.Relocate(text, 12, RelArm64.PageOffset12A, message);
+        builder.Relocate(text, 16, RelArm64.Branch26, "puts");
+
+        Assert.Equal((42, "hello from ina\r\n"), RunArm64(LinkArm64(builder.Build())));
+    }
+
+    [Fact]
     public void CallOfAnImportedFunctionGoesThroughAThunkThatLoadsTheAddressSlot()
     {
         var builder = new CoffObjectBuilder(CoffMachine.Arm64);

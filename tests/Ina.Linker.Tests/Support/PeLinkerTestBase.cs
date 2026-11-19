@@ -18,6 +18,9 @@ public abstract class PeLinkerTestBase : IDisposable
     /// <summary>Whether executables produced for x64 Windows can be run on this machine.</summary>
     protected static bool CanRunWindowsX64 => OperatingSystem.IsWindows() && RuntimeInformation.ProcessArchitecture == Architecture.X64;
 
+    /// <summary>Whether executables produced for ARM64 Windows can be run on this machine.</summary>
+    protected static bool CanRunWindowsArm64 => OperatingSystem.IsWindows() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+
     public void Dispose()
     {
         try
@@ -57,7 +60,18 @@ public abstract class PeLinkerTestBase : IDisposable
     protected static (int ExitCode, string Output) Run(string path)
     {
         Assert.SkipUnless(CanRunWindowsX64, "Running the linked executable requires an x64 Windows host.");
+        return Start(path);
+    }
 
+    /// <summary>Runs a linked ARM64 executable.</summary>
+    protected static (int ExitCode, string Output) RunArm64(string path)
+    {
+        Assert.SkipUnless(CanRunWindowsArm64, "Running the linked executable requires a Windows on ARM64 host.");
+        return Start(path);
+    }
+
+    private static (int ExitCode, string Output) Start(string path)
+    {
         using var process = Process.Start(new ProcessStartInfo(path) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false })!;
         var output = process.StandardOutput.ReadToEnd();
         var error = process.StandardError.ReadToEnd();

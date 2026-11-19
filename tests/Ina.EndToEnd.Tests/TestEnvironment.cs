@@ -19,6 +19,9 @@ internal static class TestEnvironment
     /// <summary>Whether executables built for x64 Windows can be run on this machine.</summary>
     public static bool CanRunWindowsX64 => OperatingSystem.IsWindows() && RuntimeInformation.ProcessArchitecture == Architecture.X64;
 
+    /// <summary>Whether executables built for ARM64 Windows can be run on this machine.</summary>
+    public static bool CanRunWindowsArm64 => OperatingSystem.IsWindows() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+
     private const string Arm64Emulator = "qemu-aarch64";
     private const string Arm64SystemRoot = "/usr/aarch64-linux-gnu";
 
