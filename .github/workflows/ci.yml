@@ -10,6 +10,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Called by release.yml, which publishes only what passes the same checks.
+  workflow_call:
 
 permissions:
   contents: read

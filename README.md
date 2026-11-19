@@ -298,7 +298,7 @@ Verification gaps are listed in [docs/Design.md](docs/Design.md#10-verification)
 | `samples` | Applications used as end-to-end test subjects |
 | `tests` | Unit tests of the linkers, the pipeline and the link task; end-to-end tests over the samples |
 | `eng` | Engineering scripts: regenerating the import tables |
-| `.github` | Continuous integration |
+| `.github` | Continuous integration and releases |
 | `docs` | [Design](docs/Design.md) and [project guidelines](docs/Guidelines.md) |
 
 ## Development
@@ -376,6 +376,36 @@ A project outside of the repository does the same in its project file:
 This leaves out how NuGet resolves the SDK and how the package is laid out. The publish
 tests cover both with the package itself.
 
+### Releasing
+
+The ina tool (package `Ina`) and `Ina.Sdk` are released together, under the version in
+`Directory.Build.props`. Pushing a tag that names that version releases them:
+
+```console
+$ git tag v0.1.0
+$ git push origin v0.1.0
+```
+
+`.github/workflows/release.yml` then runs the jobs of the continuous integration on the
+tagged commit, packs both packages in the Release configuration, pushes them to nuget.org
+and creates a GitHub release with the packages attached, whose notes GitHub generates from
+the changes since the previous release. A tag that names another version fails before
+anything is published. A version with a pre-release label, such as `0.2.0-preview.1`,
+becomes a pre-release on GitHub.
+
+The packages are pushed with [Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing),
+so the repository holds no API key. It has to be set up once:
+
+- On nuget.org, a Trusted Publishing policy of the account that owns the packages, with
+  the repository owner `mayuki`, the repository `Ina`, the workflow file `release.yml` and
+  the environment `nuget`.
+- In the repository, the secret `NUGET_USER` with the name of that account on nuget.org
+  (the profile name, not the e-mail address).
+
+The push runs in the GitHub environment `nuget`, which GitHub creates on the first run.
+Protection rules added to it, such as required reviewers or a restriction to `v*` tags,
+hold back the push and with it the release.
+
 ## Third-party components
 
 Ina does not redistribute any of these; they are downloaded from nuget.org when needed.
@@ -400,3 +430,7 @@ library is included:
 - `windows.abi` lists which system DLL of Windows exports which name, extracted from the
   export tables of the DLLs with `eng/GenerateWindowsAbi.cs`. Neither the Windows SDK nor
   the Visual C++ libraries are used, at build time or to generate the table.
+
+## License
+
+Ina is licensed under the [MIT License](LICENSE).
