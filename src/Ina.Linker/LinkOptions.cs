@@ -115,4 +115,13 @@ public sealed record LinkResult(
             return null;
         }
     }
+
+    /// <summary>
+    /// The oldest system the image runs on, the way a summary shows it: <c>glibc 2.17+</c> or <c>macOS 12.0+</c>.
+    /// Null when the image requires nothing in particular.
+    /// </summary>
+    public string? MinimumSystem =>
+        MinimumGlibcVersion is { } glibc ? $"glibc {glibc}+"
+        : MinimumMacOSVersion is { } macOS ? $"macOS {macOS}+"
+        : null;
 }
