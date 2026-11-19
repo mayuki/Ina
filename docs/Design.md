@@ -467,8 +467,8 @@ are present. It redefines two targets of `Microsoft.NETCore.Native.Unix.targets`
 
 | Target | Original | Replacement |
 |---|---|---|
-| `SetupOSSpecificProps` | Selects the runtime libraries to link and the P/Invokes to bind directly; looks for clang or gcc and `objcopy` and fails without them | Selects the same libraries for a dynamically linked glibc executable; looks for nothing |
-| `LinkNative` | Runs clang as the linker driver, then `objcopy` to split off the debug information | Runs the `InaLink` task |
+| `SetupOSSpecificProps` | Selects the runtime libraries to link and the P/Invokes to bind directly; looks for clang or gcc and `objcopy` and fails without them | Selects the same libraries for an executable that is linked dynamically against the system libraries only; looks for nothing |
+| `LinkNative` | Runs clang as the linker driver, then `objcopy` to split off the debug information (for macOS: `dsymutil` and `strip`) | Runs the `InaLink` task |
 
 Everything before (`IlcCompile` and what it depends on) and after (`ComputeLinkedFilesToPublish`,
 `CopyNativeBinary`) is the original. Two properties are set on top: `NativeDebugSymbols`
@@ -477,11 +477,28 @@ generates, and `DisableUnsupportedError` is turned on, because the check behind 
 to target another operating system for want of a linker.
 
 `InaLink` (`src/Ina.Sdk/InaLink.cs`) receives the object file and the libraries in link
-order, the runtime identifier, and the exports file that ILCompiler writes for GNU-style
-linkers (a version script naming the symbols that stay visible, e.g.
-`DotNetRuntimeDebugHeader`). It runs inside MSBuild; the package brings `Ina.Linker.dll`
-along. `Runtime="NET"` on its registration lets an MSBuild that runs on .NET Framework
-start the task in a .NET process.
+order, the runtime identifier, and the exports file in which ILCompiler names the symbols
+that stay visible, e.g. `DotNetRuntimeDebugHeader`. The runtime identifier selects the
+linker and its import table: ELF and glibc for Linux, Mach-O and the system libraries of
+macOS. The task runs inside MSBuild; the package brings `Ina.Linker.dll` along.
+`Runtime="NET"` on its registration lets an MSBuild that runs on .NET Framework start the
+task in a .NET process.
+
+**Linux and macOS.** The same two replacements serve both systems, because little of
+what differs between them is left in these targets:
+
+- The runtime libraries are the same except for the one that implements cryptography:
+  OpenSSL for Linux, Apple's frameworks for macOS.
+- The original lists the frameworks and system libraries of a macOS link (`NativeFramework`,
+  `NativeSystemLibrary`). Ina's linker does not need the list, since its import table says
+  which library exports a symbol, and an image depends only on the libraries it uses.
+- The exports file is a version script for GNU-style linkers and a list of symbols, in the
+  spelling of object files, for Apple's (`VersionScript`, `ExportedSymbolsList`).
+- What the original runs after the link is not needed: the linker strips the image itself
+  and signs a macOS executable (4.8). There is no `.dbg` file and no `.dSYM` bundle, as there
+  is no debug information.
+- A macOS executable is always position independent, so `PositionIndependentExecutable=false`
+  is rejected for these targets (5.4).
 
 **Incremental builds.** MSBuild skips a target whose outputs are newer than its inputs,
 and the options of a link are not files. The target `_InaWriteLinkOptions` writes them
@@ -512,7 +529,7 @@ not imported; there the check only runs before the publish steps.)
 |---|---|---|
 | INA1001 | targets | `PublishIna` without `PublishAot` (package reference), or together with `PublishAot=false` |
 | INA1002 | targets, task | The runtime identifier is missing or not supported |
-| INA1003 | targets | A setting that needs what Ina does not produce or link: `NativeLib`, `CustomNativeMain`, `StaticExecutable`, `StaticICULinking`, `StaticOpenSslLinking`, `LinkStandardCPlusPlusLibrary`, `UseSystemZlib`, `UseSystemBrotli` |
+| INA1003 | targets | A setting that needs what Ina does not produce or link: `NativeLib`, `CustomNativeMain`, `StaticExecutable`, `StaticICULinking`, `StaticOpenSslLinking`, `LinkStandardCPlusPlusLibrary`, `UseSystemZlib`, `UseSystemBrotli`, and for macOS `PositionIndependentExecutable=false` |
 | INA1004 | targets | The application targets a framework before .NET 10 |
 | INA1005 | targets (warning) | `LinkerArg` items are ignored, since no native linker runs |
 | INA2001 | task | The link failed, e.g. because of an undefined symbol |
@@ -523,18 +540,11 @@ not imported; there the check only runs before the publish steps.)
 | | `ina App.dll` | `dotnet publish` with `PublishIna` |
 |---|---|---|
 | Input | An assembly that is already built | A project |
-| Targets | Linux and macOS | Linux |
 | Compiler arguments | Derived by `Ina.Core` from the assembly and its `runtimeconfig.json`, mirroring the NativeAOT targets | Computed by the NativeAOT targets |
 | Packs | Downloaded by Ina into `~/.ina/packs`, or reused from the NuGet cache | Restored by NuGet |
 | Settings | Options of the command | MSBuild properties of NativeAOT |
 | Shared frameworks, satellite assemblies, static libraries | No | Yes |
 | Runs with | The .NET runtime, or stand-alone when `ina` is compiled with itself | The .NET SDK |
-
-The link task produces ELF executables only so far. For the macOS targets it needs the
-Mach-O linker and its import tables behind it, and a replacement of `SetupOSSpecificProps`
-that selects the runtime libraries of a macOS link the way `BuildPipeline` does for the
-command. Until then `PublishIna` rejects their runtime identifiers (INA1002), also on a
-Mac, where publishing for a Linux target works like anywhere else.
 
 ## 6. Observability
 
@@ -560,8 +570,8 @@ Mac, where publishing for a Linux target works like anywhere else.
 |---|---|
 | `Ina.Linker.Tests` | Links small programs that are assembled in memory by `ElfObjectBuilder` and `MachObjectBuilder` and runs them: imports, GOT and stubs, constructors, thread-local variables, archives, weak and common symbols, COMDAT, garbage collection and dead stripping, unwind tables, image layout. The images are also read back the way a loader does (`ElfImage`, `MachOImage`: load commands, fixup programs, export trie, unwind table, code signature), and relocations are checked by decoding the patched instructions, so that everything but the execution is tested on every host. For macOS the system unwinder walks a real stack through frames described by compact encodings and by DWARF. |
 | `Ina.Core.Tests` | Targets, ILCompiler arguments, application inspection, pack selection and download against an in-memory package feed. |
-| `Ina.Sdk.Tests` | The link task with a recording build engine: linking objects that are assembled in memory, the options, the exports file, and the errors it reports. |
-| `Ina.EndToEnd.Tests` | Compiles the samples with the full pipeline for Linux and macOS, runs them where the host can and compares the output with the regular .NET runtime executing the same assembly; drives the `ina` command. Also compiles `ina` itself and uses the native tool to build an application. The publish tests copy a sample, add Ina to its project file the way a user would, and run `dotnet publish`. |
+| `Ina.Sdk.Tests` | The link task with a recording build engine: linking objects that are assembled in memory for both object formats, the options, the exports file in its two forms, and the errors it reports. |
+| `Ina.EndToEnd.Tests` | Compiles the samples with the full pipeline for Linux and macOS, runs them where the host can and compares the output with the regular .NET runtime executing the same assembly; drives the `ina` command. Also compiles `ina` itself and uses the native tool to build an application. The publish tests copy a sample, add Ina to its project file the way a user would, and run `dotnet publish` for Linux and for macOS. |
 
 The test suite does not use a native toolchain. Machine code in tests is written as bytes
 with the assembly as comments.
@@ -571,7 +581,11 @@ test project packs `Ina.Sdk` into a feed next to the test assembly, under a vers
 that is reserved for the tests (`<version>-e2e`), and the tests remove the copy that NuGet
 extracted before and after a run, because NuGet never replaces a version it already has.
 Every `dotnet publish` of the tests runs with a search path that contains only `dotnet`
-and `sh`, so a step that reaches for clang, gcc, `ld` or `objcopy` fails the test.
+and `sh`, so a step that reaches for clang, gcc, `ld` or `objcopy` fails the test, and
+likewise one that reaches for Apple's `dsymutil`, `strip` or `codesign`. NuGet's audit is
+switched off for these commands: the samples treat warnings as errors, and an advisory for
+the compiler package of the installed .NET SDK would fail every publish for a reason that
+has nothing to do with Ina.
 
 ## 8. Verification
 
@@ -595,11 +609,9 @@ What has been verified, and how:
   `DirectPInvoke` (a C library built with gcc); satellite resource assemblies; the web API
   template of the .NET SDK (`dotnet new webapiaot`); `ina` itself; the version of the SDK
   in `global.json`.
-- `dotnet publish` on the Mac (.NET SDK 10.0.400, `osx-arm64` host), by the tests that do
-  not have to run what they publish: `-r linux-arm64` with the header of the executable
-  inspected, relinking after a changed link option, the errors of 5.4. NuGet's audit was
-  switched off for that run (`NuGetAudit=false`): it reports a known vulnerability in the
-  compiler package of that SDK, and the samples treat warnings as errors.
+- `dotnet publish` for Linux on the Mac (.NET SDK 10.0.400, `osx-arm64` host), by the tests
+  that do not have to run what they publish: `-r linux-arm64` with the header of the
+  executable inspected, relinking after a changed link option, the errors of 5.4.
 - `osx-arm64`: all samples run natively on an Apple silicon Mac (macOS 27.2, which was
   also the host of the build) and behave identically to the regular runtime. A larger ad
   hoc program covered what the samples do not: AES-GCM and ChaCha20-Poly1305 (Swift code
@@ -625,6 +637,23 @@ What has been verified, and how:
   section, the imports are bound to the same libraries with the same weakness, every
   entry of `__unwind_info` has the same encoding and LSDA, and Apple's `dwarfdump` finds
   the same FDEs. Apple's `codesign` accepts the signatures.
+- `dotnet publish` for macOS (.NET SDK 10.0.400, on the Mac), by tests: `-r osx-arm64` as a
+  project SDK, and as a package reference without a runtime identifier, which publishes
+  for the Mac itself; the samples including a project reference with a content file and
+  the ASP.NET Core minimal API that serves requests; the runtime libraries for server GC,
+  `EventSourceSupport` and `OptimizationPreference=Speed`; relinking after a changed link
+  option; the rejection of a fixed-address executable. Everything published for `osx-arm64`
+  is run. `-r osx-x64` is published and its header inspected.
+- Comparison of `dotnet publish` with the link of NativeAOT: the samples were also published
+  with `PublishAot` and Apple's toolchain (as a development aid), for both architectures.
+  The programs print the same, export the same symbol and import the same symbols of the
+  system, with two differences that are intended: the version check of the compiler
+  support library is generated (4.5) instead of linked, which saves its imports for reading
+  a file, and all imports are bound when the image is loaded, so that an x64 image does
+  not need `dyld_stub_binder`. The segments have the same sizes to within a page. The
+  comparison needs the same compiler input on both sides: for an application of the web
+  SDK that meant setting `EventSourceSupport`, which that SDK only switches on by itself
+  when the project sets `PublishAot`.
 
 Not verified:
 
@@ -640,11 +669,15 @@ Not verified:
   is laid out for 64 KiB).
 - **Integrity of downloaded packs.** The `ina` command fetches packages over HTTPS from
   nuget.org; their signatures are not validated. (`dotnet publish` restores them with NuGet.)
-- **`dotnet publish` on other hosts.** On a Mac only the tests named above have run, and
-  nothing that was published there has been executed. Publishing for Linux from Windows
-  should work as well, since nothing in the replaced targets runs a shell command, but it
-  has not been tried. The same holds for MSBuild on .NET Framework (Visual Studio,
-  `msbuild.exe`), where the link task has to run in a .NET task host.
+- **`dotnet publish` on other hosts.** For Linux targets only the tests named above have
+  run on a Mac, and nothing that was published there has been executed. For macOS
+  targets `dotnet publish` has only been run on a Mac: its tests publish on every host,
+  with nothing but `dotnet` and `sh` on the search path, and the `ina` command has built
+  macOS executables on Linux, but the .NET SDK on Linux with a macOS target has not been
+  tried. Publishing from Windows should work as well, since nothing in the replaced targets
+  runs a shell command, but it has not been tried either. The same holds for MSBuild on
+  .NET Framework (Visual Studio, `msbuild.exe`), where the link task has to run in a .NET
+  task host.
 - **Other versions of the .NET SDK.** The replaced targets are internals of the NativeAOT
   targets (5.3); only the SDKs named above have been tried.
 
@@ -659,15 +692,13 @@ Roughly in order of expected value:
 2. **Fully static Linux executables** against musl, for scratch containers. The linker
    already resolves everything statically except the C library; this needs the musl
    runtime pack and musl's `libc.a` as an input.
-3. **macOS targets in `dotnet publish`**: the Mach-O linker behind the link task (5.5),
-   so that `PublishIna` accepts `osx-x64` and `osx-arm64` like the `ina` command does.
-4. **Debug information**: pass the DWARF sections through and emit a symbol file (a dSYM
+3. **Debug information**: pass the DWARF sections through and emit a symbol file (a dSYM
    bundle for macOS). With `dotnet publish` this is what `StripSymbols` and the `.dbg`
    file of NativeAOT stand for.
-5. **Native libraries as output** (`NativeLib`), which `dotnet publish` could then accept.
-6. **Hosting ILCompiler in-process**, which would remove the child process and allow
+4. **Native libraries as output** (`NativeLib`), which `dotnet publish` could then accept.
+5. **Hosting ILCompiler in-process**, which would remove the child process and allow
    writing the executable without an intermediate object file.
-7. Smaller items: satellite assemblies and native libraries of NuGet packages for the
+6. Smaller items: satellite assemblies and native libraries of NuGet packages for the
    `ina` command, `DT_RELR` packed relocations, deduplication of identical CIEs,
    validation of package signatures, one description of the runtime libraries to link
    for both front ends. For macOS: universal binaries (both architectures in one file),

@@ -21,6 +21,8 @@
     <Compile Include="..\Ina.Linker.Tests\Support\Code.cs" Link="Support\Code.cs" />
     <Compile Include="..\Ina.Linker.Tests\Support\ElfImage.cs" Link="Support\ElfImage.cs" />
     <Compile Include="..\Ina.Linker.Tests\Support\ElfObjectBuilder.cs" Link="Support\ElfObjectBuilder.cs" />
+    <Compile Include="..\Ina.Linker.Tests\Support\MachObjectBuilder.cs" Link="Support\MachObjectBuilder.cs" />
+    <Compile Include="..\Ina.Linker.Tests\Support\MachOImage.cs" Link="Support\MachOImage.cs" />
   </ItemGroup>
 
   <ItemGroup>

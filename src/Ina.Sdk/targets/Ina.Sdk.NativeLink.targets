@@ -8,7 +8,7 @@
 
   - SetupOSSpecificProps selects the runtime libraries to link. The original also looks for clang, gcc and objcopy
     and fails if they are missing.
-  - LinkNative runs the linker. The original calls clang and objcopy.
+  - LinkNative runs the linker. The original calls clang, and afterwards objcopy, or dsymutil and strip for macOS.
 -->
 <Project>
 
@@ -24,9 +24,12 @@
   <UsingTask TaskName="Ina.Sdk.InaLink" AssemblyFile="$(InaTasksAssembly)" Runtime="NET" />
 
   <!--
-    The libraries of a dynamically linked glibc executable, in the order of the original target: the native parts
-    of the framework first, then the runtime they depend on. ILCompiler turns P/Invokes into the libraries listed
-    as DirectPInvoke into direct calls, which is why the target is a dependency of the compilation as well.
+    The libraries of an executable that is linked dynamically against the system libraries only, in the order of
+    the original target: the native parts of the framework first, then the runtime they depend on. Linux and macOS
+    differ in the library that implements cryptography: OpenSSL for Linux, Apple's frameworks for macOS. The frameworks and
+    system libraries themselves are not listed, because the import table of the linker knows which one exports a
+    symbol. ILCompiler turns P/Invokes into the libraries listed as DirectPInvoke into direct calls, which is why
+    the target is a dependency of the compilation as well.
   -->
   <Target Name="SetupOSSpecificProps" DependsOnTargets="$(IlcDynamicBuildPropertyDependencies)">
 
@@ -46,7 +49,8 @@
       <NetCoreAppNativeLibrary Include="System.Globalization.Native" Condition="'$(InvariantGlobalization)' != 'true'" />
       <NetCoreAppNativeLibrary Include="System.IO.Compression.Native" />
       <NetCoreAppNativeLibrary Include="System.Net.Security.Native" />
-      <NetCoreAppNativeLibrary Include="System.Security.Cryptography.Native.OpenSsl" />
+      <NetCoreAppNativeLibrary Include="System.Security.Cryptography.Native.OpenSsl" Condition="'$(_InaTargetsMacOS)' != 'true'" />
+      <NetCoreAppNativeLibrary Include="System.Security.Cryptography.Native.Apple" Condition="'$(_InaTargetsMacOS)' == 'true'" />
     </ItemGroup>
 
     <ItemGroup>

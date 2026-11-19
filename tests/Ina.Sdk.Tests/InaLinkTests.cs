@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Ina.Linker;
 using Ina.Linker.Elf;
+using Ina.Linker.MachO;
 using Ina.Linker.Tests.Support;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
@@ -112,10 +114,80 @@ public sealed class InaLinkTests : IDisposable
         Assert.Contains("DotNetRuntimeDebugHeader", new ElfImage(File.ReadAllBytes(task.OutputPath)).DynamicSymbols);
     }
 
+    [Fact]
+    public void MacOSRuntimeIdentifierProducesAMachOExecutable()
+    {
+        var task = CreateTask("osx-arm64", MachFunction("_main", 0x52800540, Arm64Ret)); // mov w0, #42 ; ret
+
+        Assert.True(task.Execute(), Describe(_engine.Errors));
+        Assert.Empty(_engine.Errors);
+        Assert.Empty(_engine.Warnings);
+
+        // What the executable requires of the system is a version of macOS, not of a C library.
+        var summary = Assert.Single(_engine.Messages, static m => m.Importance == MessageImportance.High);
+        Assert.Contains("osx-arm64", summary.Message);
+        Assert.Contains("macOS 12.0+", summary.Message);
+        Assert.DoesNotContain("glibc", summary.Message);
+
+        var image = new MachOImage(File.ReadAllBytes(task.OutputPath));
+        Assert.Equal(MachCpu.Arm64, image.CpuType);
+        Assert.True(image.Signature!.HashesMatch);
+
+        Assert.SkipUnless(OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64, "Running the executable requires a Mac with Apple silicon.");
+        using var process = Process.Start(new ProcessStartInfo(task.OutputPath) { UseShellExecute = false })!;
+        process.WaitForExit();
+        Assert.Equal(42, process.ExitCode);
+    }
+
+    [Fact]
+    public void MacOSRuntimeIdentifierSelectsTheArchitecture()
+    {
+        var builder = new MachObjectBuilder(TargetArchitecture.X64);
+        builder.Global("_main", builder.Text(0xb8, 0x2a, 0x00, 0x00, 0x00, 0xc3)); // mov eax, 42 ; ret
+        var task = CreateTask("osx-x64", builder.Build());
+
+        Assert.True(task.Execute(), Describe(_engine.Errors));
+
+        Assert.Equal(MachCpu.X64, new MachOImage(File.ReadAllBytes(task.OutputPath)).CpuType);
+    }
+
+    [Fact]
+    public void SymbolsOfTheExportsFileStayVisibleInAMacOSExecutable()
+    {
+        // For Apple's linker ILCompiler writes a plain list of symbols, spelled the way object files spell them.
+        var builder = new MachObjectBuilder();
+        builder.Global("_main", builder.Text(Code.Arm64(0x52800000, Arm64Ret))); // mov w0, #0 ; ret
+        builder.Global("_DotNetRuntimeDebugHeader", builder.Data(new byte[8]));
+        var hidden = CreateTask("osx-arm64", builder.Build());
+        var exported = CreateTask("osx-arm64", builder.Build());
+        exported.ExportsFile = Path.Combine(_directory, "app.exports");
+        File.WriteAllText(exported.ExportsFile, "_DotNetRuntimeDebugHeader\n");
+
+        Assert.True(hidden.Execute(), Describe(_engine.Errors));
+        Assert.True(exported.Execute(), Describe(_engine.Errors));
+
+        Assert.DoesNotContain("_DotNetRuntimeDebugHeader", new MachOImage(File.ReadAllBytes(hidden.OutputPath)).Exports.Keys);
+        Assert.Contains("_DotNetRuntimeDebugHeader", new MachOImage(File.ReadAllBytes(exported.OutputPath)).Exports.Keys);
+    }
+
+    [Fact]
+    public void FixedAddressExecutableIsAnErrorForMacOS()
+    {
+        var task = CreateTask("osx-arm64", MachFunction("_main", 0x52800000, Arm64Ret));
+        task.PositionIndependent = false;
+
+        Assert.False(task.Execute());
+
+        var error = Assert.Single(_engine.Errors);
+        Assert.Equal("INA2001", error.Code);
+        Assert.Contains("position independent", error.Message);
+        Assert.False(File.Exists(task.OutputPath));
+    }
+
     [Theory]
     [InlineData("win-x64")]
     [InlineData("linux-musl-x64")]
-    [InlineData("osx-arm64")]
+    [InlineData("ios-arm64")]
     [InlineData("")]
     public void UnsupportedRuntimeIdentifierIsAnError(string runtimeIdentifier)
     {
@@ -125,8 +197,7 @@ public sealed class InaLinkTests : IDisposable
 
         var error = Assert.Single(_engine.Errors);
         Assert.Equal("INA1002", error.Code);
-        Assert.Contains("linux-x64", error.Message);
-        Assert.Contains("linux-arm64", error.Message);
+        Assert.Contains("linux-x64, linux-arm64, osx-x64, osx-arm64", error.Message);
         Assert.False(File.Exists(task.OutputPath));
     }
 
@@ -173,6 +244,14 @@ public sealed class InaLinkTests : IDisposable
             OutputPath = Path.Combine(_directory, $"app{index}"),
             RuntimeIdentifier = runtimeIdentifier,
         };
+    }
+
+    /// <summary>An arm64 Mach-O object with a single global function.</summary>
+    private static byte[] MachFunction(string name, params uint[] instructions)
+    {
+        var builder = new MachObjectBuilder();
+        builder.Global(name, builder.Text(Code.Arm64(instructions)));
+        return builder.Build();
     }
 
     private static string Describe(IEnumerable<BuildErrorEventArgs> errors) => string.Join(Environment.NewLine, errors.Select(static e => $"{e.Code}: {e.Message}"));

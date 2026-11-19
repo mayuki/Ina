@@ -110,6 +110,7 @@ refers to it and sets `PublishIna`:
 ```console
 $ dotnet publish                       # for this machine
 $ dotnet publish -r linux-arm64        # for another architecture
+$ dotnet publish -r osx-arm64          # for another operating system
 ```
 
 The publish directory contains the executable and the content files of the project, as
@@ -145,12 +146,15 @@ What differs from a NativeAOT publish, apart from not needing a toolchain:
 
 | Setting | With `PublishIna` |
 |---|---|
-| `RuntimeIdentifier` (`-r`) | `linux-x64` or `linux-arm64`, independent of the machine that publishes (tested on a `linux-x64` host; on an `osx-arm64` host the result was built but not run). Anything else is an error (INA1002); that includes the macOS targets, which only the `ina` command builds so far |
-| `PositionIndependentExecutable` | `false` produces a fixed-address executable |
-| `StripSymbols` | `false` keeps the symbol table. There is no debug information and no `.dbg` file yet |
-| `NativeLibrary`, `DirectPInvoke` | Static libraries are linked into the executable, as long as they need nothing but the C library |
+| `RuntimeIdentifier` (`-r`) | `linux-x64`, `linux-arm64`, `osx-x64` or `osx-arm64`, independent of the machine that publishes. Anything else is an error (INA1002). The Linux targets are tested on a `linux-x64` host and the macOS targets on an `osx-arm64` host; [Verification](docs/Design.md#8-verification) lists the combinations that were only built or not tried |
+| `PositionIndependentExecutable` | `false` produces a fixed-address executable for Linux. macOS has none, so there it is an error (INA1003) |
+| `StripSymbols` | `false` keeps the symbol table. There is no debug information, and no `.dbg` file or `.dSYM` bundle yet |
+| `NativeLibrary`, `DirectPInvoke` | Static libraries are linked into the executable, as long as they need nothing but what the import table of the target lists: the C library, and for macOS the frameworks that the .NET runtime itself uses |
 | `LinkerArg` | Ignored with a warning (INA1005): no native linker runs |
 | `NativeLib`, `CustomNativeMain`, `StaticExecutable`, `StaticICULinking`, `StaticOpenSslLinking`, `LinkStandardCPlusPlusLibrary`, `UseSystemZlib`, `UseSystemBrotli` | Not supported (error INA1003) |
+
+A macOS executable is signed ad hoc by the linker, like the ones of the `ina` command, so
+it runs on the Mac it is copied to without further steps.
 
 `Ina.Sdk` is not on nuget.org. To try it, pack it and add the folder as a package source:
 
@@ -232,8 +236,6 @@ linker produces from the same inputs, but they have not been run: see
 Not done yet:
 
 - Windows (PE/COFF) targets, fully static musl executables, universal (fat) macOS binaries
-- macOS targets with `dotnet publish`: `PublishIna` accepts the Linux targets, macOS
-  executables are built with the `ina` command
 - Debug information in the executable (the compiler's DWARF output is dropped; no dSYM)
 - Native libraries (`NativeLib`) as output
 - With the `ina` command: satellite resource assemblies, shared frameworks such as ASP.NET Core,
@@ -260,7 +262,7 @@ Verification gaps are listed in [docs/Design.md](docs/Design.md#8-verification).
 
 ```console
 $ dotnet build
-$ dotnet test          # ~300 tests, about a minute
+$ dotnet test          # ~320 tests, about a minute
 ```
 
 The tests do not use a native toolchain: object files are assembled in memory by a
