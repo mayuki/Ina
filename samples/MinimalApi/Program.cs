@@ -1,3 +1,4 @@
+using System.Diagnostics.Tracing;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -31,6 +32,10 @@ Console.WriteLine($"POST /todos -> {(int)created.StatusCode} {created.Headers.Lo
 Console.WriteLine($"GET /todos/3 -> {await client.GetStringAsync("/todos/3")}");
 using var missing = await client.GetAsync("/todos/99");
 Console.WriteLine($"GET /todos/99 -> {(int)missing.StatusCode}");
+
+// Event sources are what dotnet-counters and dotnet-trace attach to. An application that is compiled ahead of time
+// loses them by default; the web SDK keeps them, because ASP.NET Core reports its diagnostics through them.
+Console.WriteLine($"Event sources: {(EventSource.GetSources().Any() ? "available" : "none")}");
 
 await app.StopAsync();
 

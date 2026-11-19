@@ -18,6 +18,13 @@
     -->
     <PublishAot Condition="'$(PublishAot)' == '' and '$(_InaIsProjectSdk)' == 'true'">true</PublishAot>
 
+    <!--
+      The web SDK keeps EventSource on for an application that is compiled ahead of time, where the .NET SDK
+      switches it off. It decides that before it imports the .NET SDK, which is before PublishIna has become
+      PublishAot above, so its default is repeated here.
+    -->
+    <EventSourceSupport Condition="'$(EventSourceSupport)' == '' and '$(PublishAot)' == 'true' and '$(UsingMicrosoftNETSdkWeb)' == 'true'">true</EventSourceSupport>
+
     <!-- The NativeAOT targets refuse to target another operating system because they cannot link for it. Ina can. -->
     <DisableUnsupportedError>true</DisableUnsupportedError>
   </PropertyGroup>

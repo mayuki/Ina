@@ -447,6 +447,13 @@ Sdk/Sdk.targets of Ina.Sdk                     empty
 points of the .NET SDK, which import them at exactly these positions. The same file serves
 both ways of referring to Ina.
 
+The first position is early enough for the .NET SDK, but not for an SDK that is layered on
+top of it and looks at `PublishAot` before it imports the .NET SDK. The web SDK does: for
+an application that is compiled ahead of time it keeps `EventSourceSupport` on, through
+which ASP.NET Core reports its diagnostics and which the .NET SDK would switch off. A
+project that only sets `PublishIna` is not such an application yet at that point, so the
+file that turns `PublishIna` into `PublishAot` repeats this one default for web projects.
+
 What differs is the restore. The .NET SDK decides *during the restore* whether to download
 ILCompiler and the runtime pack, by looking at `PublishAot`. A project SDK is resolved
 before any evaluation, including that of the restore, so there `PublishIna` can imply
@@ -640,7 +647,8 @@ What has been verified, and how:
 - `dotnet publish` for macOS (.NET SDK 10.0.400, on the Mac), by tests: `-r osx-arm64` as a
   project SDK, and as a package reference without a runtime identifier, which publishes
   for the Mac itself; the samples including a project reference with a content file and
-  the ASP.NET Core minimal API that serves requests; the runtime libraries for server GC,
+  the ASP.NET Core minimal API, which serves requests and has its event sources like an
+  application published with `PublishAot`; the runtime libraries for server GC,
   `EventSourceSupport` and `OptimizationPreference=Speed`; relinking after a changed link
   option; the rejection of a fixed-address executable. Everything published for `osx-arm64`
   is run. `-r osx-x64` is published and its header inspected.
@@ -650,10 +658,7 @@ What has been verified, and how:
   system, with two differences that are intended: the version check of the compiler
   support library is generated (4.5) instead of linked, which saves its imports for reading
   a file, and all imports are bound when the image is loaded, so that an x64 image does
-  not need `dyld_stub_binder`. The segments have the same sizes to within a page. The
-  comparison needs the same compiler input on both sides: for an application of the web
-  SDK that meant setting `EventSourceSupport`, which that SDK only switches on by itself
-  when the project sets `PublishAot`.
+  not need `dyld_stub_binder`. The segments have the same sizes to within a page.
 - `dotnet publish` for macOS on Linux: in a virtual machine with Debian 12 (arm64) and the
   .NET SDK 10.0.400, on which neither a native toolchain nor any of Apple's tools exists
   (no clang, gcc, `ld`, `objcopy`, `strip`, `dsymutil` or `codesign`), all four test
@@ -687,6 +692,9 @@ Not verified:
   targets runs a shell command, but it has not been tried. The same holds for MSBuild on
   .NET Framework (Visual Studio, `msbuild.exe`), where the link task has to run in a .NET
   task host.
+- **Event sources of a web application on Linux.** Since web projects keep
+  `EventSourceSupport` (5.2), the ASP.NET Core sample is linked with the event pipe of the
+  runtime. That has been run on macOS; for Linux it has been published, but not run.
 - **Other versions of the .NET SDK.** The replaced targets are internals of the NativeAOT
   targets (5.3); only the SDKs named above have been tried.
 

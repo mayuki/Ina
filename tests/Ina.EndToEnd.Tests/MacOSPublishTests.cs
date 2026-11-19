@@ -125,6 +125,9 @@ public class MacOSPublishTests(PublishEnvironment environment)
         Assert.True(native.ExitCode == 0, native.Output + native.Error);
         Assert.Contains("POST /todos -> 201 /todos/3", native.Output);
         Assert.Equal(reference.Output, native.Output);
+
+        // PublishIna alone has to keep the defaults that the web SDK applies to a project with PublishAot.
+        Assert.Contains("Event sources: available", native.Output);
     }
 
     [Fact]
