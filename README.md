@@ -157,6 +157,7 @@ Verification gaps are listed in [docs/Design.md](docs/Design.md#8-verification).
 | `samples` | Applications used as end-to-end test subjects |
 | `tests` | Unit tests of the linkers and the pipeline, end-to-end tests over the samples |
 | `eng` | Engineering scripts: regenerating the import tables |
+| `.github` | Continuous integration |
 | `docs` | [Design](docs/Design.md) and [project guidelines](docs/Guidelines.md) |
 
 ## Development
@@ -174,11 +175,17 @@ helpers, linked, and executed. What can be executed depends on the machine:
 | `linux-x64` | on x64 Linux; the linker tests also on Windows through WSL when a distribution is installed |
 | `linux-arm64` | on arm64 Linux, or with `qemu-aarch64` and the C library from `/usr/aarch64-linux-gnu` (Debian/Ubuntu: `apt install qemu-user libc6-arm64-cross`) |
 | `win-x64` | on x64 Windows |
-| `win-arm64` | never as a whole; the code that the linker generates runs in an emulator that is part of the tests |
+| `win-arm64` | on Windows on ARM64; everywhere else the code that the linker generates runs in an emulator that is part of the tests |
 
 Tests whose executables can not be run are skipped; the tests that inspect the structure
 of the produced images run everywhere. The first run of the end-to-end tests downloads the
 ILCompiler and runtime packs.
+
+`.github/workflows/ci.yml` runs the test suite on Linux and Windows machines of GitHub. It
+also builds the samples for Windows on Linux, runs them on Windows, and checks that a build
+of the same assemblies on Windows yields the same bytes. The jobs on arm64 machines, which
+include running `win-arm64` executables, are enabled for public repositories; a private
+repository opts in with the repository variable `ARM64_RUNNERS=true`.
 
 ## Third-party components
 

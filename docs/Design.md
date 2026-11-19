@@ -403,8 +403,14 @@ with the assembly as comments.
 
 Tests run the executables they can: Linux executables on Linux (the linker tests also on
 Windows through WSL), arm64 Linux executables natively or under `qemu-aarch64`, x64
-Windows executables on x64 Windows. Everything else is skipped, while the tests that
-inspect the structure of an image run on every host.
+Windows executables on x64 Windows, ARM64 Windows executables on Windows on ARM64.
+Everything else is skipped, while the tests that inspect the structure of an image run on
+every host.
+
+The continuous integration (`.github/workflows/ci.yml`) runs the suite on hosted Linux and
+Windows machines, where between them every kind of executable can be run, and adds a check
+across machines: the samples are built for Windows on Linux, run on Windows, and compared
+with a build of the same assemblies on Windows.
 
 ## 8. Verification
 
@@ -445,11 +451,13 @@ Not verified:
   Visual C++, the generated code was disassembled and runs in the emulator of the tests,
   and the imports were checked against the arm64 import libraries of the Windows SDK
   (except for the five functions that come from the Universal C Runtime instead of the
-  static C runtime). No executable has been started on Windows on ARM64.
+  static C runtime). No executable has been started on Windows on ARM64. The continuous
+  integration has jobs that do it; they have not run yet.
 - **A Linux machine of its own for the Windows targets.** The Linux system above was a
   WSL 2 virtual machine on the Windows development machine. It runs a real Linux kernel
   and the build was isolated from Windows, but a Linux installation on separate hardware
-  (or a hosted CI runner) has not built the Windows targets yet.
+  has not built the Windows targets yet. The continuous integration does exactly that on a
+  hosted Linux machine and runs the result on a hosted Windows machine; it has not run yet.
 - **Older Windows versions.** The executables were run on Windows 11 only. The import
   table was generated from the DLLs of Windows 11; the runtime only references functions
   that exist on Windows 10, but this has not been tested.

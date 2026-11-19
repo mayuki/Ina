@@ -3,6 +3,7 @@ Projects live in `src` and `tests` under the repository root.
 
 - repository root
 	- .gitignore
+	- .github (continuous integration)
 	- Ina.slnx
 	- global.json
 	- Directory.Build.props / Directory.Packages.props
