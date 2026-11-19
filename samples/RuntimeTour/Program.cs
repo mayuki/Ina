@@ -218,6 +218,7 @@ Section("files and environment", () =>
 
 Console.WriteLine(failures == 0 ? "All checks passed." : $"{failures} check(s) FAILED.");
 Console.WriteLine($"# dynamic code: {RuntimeFeature.IsDynamicCodeSupported}");
+Console.WriteLine($"# server gc: {System.Runtime.GCSettings.IsServerGC}");
 return failures == 0 ? 0 : 1;
 
 void Section(string name, Action body)

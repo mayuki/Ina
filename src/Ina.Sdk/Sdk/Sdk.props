@@ -1,0 +1,22 @@
+<!--
+  Ina.Sdk as an MSBuild project SDK, used in addition to the .NET SDK:
+
+      <Project Sdk="Microsoft.NET.Sdk">
+        <Sdk Name="Ina.Sdk" Version="..." />
+        <PropertyGroup>
+          <PublishIna>true</PublishIna>
+        </PropertyGroup>
+      </Project>
+
+  A project SDK is resolved before the project is evaluated, which also holds for the restore. That is what lets
+  PublishIna stand in for PublishAot here; a package reference cannot do that (see build/Ina.Sdk.props).
+-->
+<Project>
+
+  <PropertyGroup>
+    <_InaIsProjectSdk>true</_InaIsProjectSdk>
+  </PropertyGroup>
+
+  <Import Project="$(MSBuildThisFileDirectory)..\build\Ina.Sdk.props" />
+
+</Project>

@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/samples/">
     <Project Path="samples/HelloWorld/HelloWorld.csproj" />
+    <Project Path="samples/MinimalApi/MinimalApi.csproj" />
     <Project Path="samples/RuntimeTour/RuntimeTour.csproj" />
   </Folder>
   <Folder Name="/samples/JsonReader/">

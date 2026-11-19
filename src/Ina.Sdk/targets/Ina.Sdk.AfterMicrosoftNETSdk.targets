@@ -1,0 +1,58 @@
+<!--
+  Imported at the end of the targets of the .NET SDK, after the NativeAOT targets of the ILCompiler package.
+-->
+<Project>
+
+  <PropertyGroup>
+    <!-- Keep in sync with SupportedTargets in the task assembly. -->
+    <_InaSupportedRuntimeIdentifiers>linux-x64, linux-arm64</_InaSupportedRuntimeIdentifiers>
+    <_InaRuntimeIdentifierIsSupported>false</_InaRuntimeIdentifierIsSupported>
+    <_InaRuntimeIdentifierIsSupported Condition="'$(RuntimeIdentifier)' == 'linux-x64' or '$(RuntimeIdentifier)' == 'linux-arm64'">true</_InaRuntimeIdentifierIsSupported>
+  </PropertyGroup>
+
+  <!--
+    Rejects what Ina cannot do with an explanation, instead of letting the build fail somewhere in the middle.
+    INA1xxx are the codes of configuration errors; the link task reports INA2xxx.
+  -->
+  <Target Name="_InaValidatePublish" BeforeTargets="PrepareForPublish" Condition="'$(_PublishInaEnabled)' == 'true'">
+
+    <Error Code="INA1001" Condition="'$(PublishAot)' != 'true' and '$(_InaIsProjectSdk)' != 'true'"
+           Text="PublishIna requires PublishAot when Ina.Sdk is referenced as a package: a package cannot make the restore download the compiler and the runtime pack. Add &lt;PublishAot&gt;true&lt;/PublishAot&gt; to the project, or reference Ina.Sdk as a project SDK (&lt;Sdk Name=&quot;Ina.Sdk&quot; Version=&quot;...&quot; /&gt;), where PublishIna implies it." />
+    <Error Code="INA1001" Condition="'$(PublishAot)' != 'true' and '$(_InaIsProjectSdk)' == 'true'"
+           Text="PublishIna compiles the application ahead of time and cannot be combined with PublishAot=$(PublishAot). Remove one of the two properties." />
+
+    <Error Code="INA1004" Condition="'$(TargetFrameworkIdentifier)' != '.NETCoreApp' or $([MSBuild]::VersionLessThan('$(TargetFrameworkVersion)', '10.0'))"
+           Text="PublishIna requires an application that targets .NET 10 or later. The TargetFramework of this project is '$(TargetFramework)'." />
+
+    <Error Code="INA1002" Condition="'$(RuntimeIdentifier)' == ''"
+           Text="PublishIna requires a runtime identifier. Pass one with -r, for example -r linux-x64. Supported runtime identifiers: $(_InaSupportedRuntimeIdentifiers)." />
+    <Error Code="INA1002" Condition="'$(RuntimeIdentifier)' != '' and '$(_InaRuntimeIdentifierIsSupported)' != 'true'"
+           Text="Ina cannot produce executables for the runtime identifier '$(RuntimeIdentifier)'. Supported runtime identifiers: $(_InaSupportedRuntimeIdentifiers). Pass one of them with -r; the machine that publishes does not have to match it." />
+
+    <ItemGroup>
+      <_InaUnsupportedSetting Include="NativeLib=$(NativeLib)" Condition="'$(NativeLib)' != ''" Reason="Ina links executables, not native libraries" />
+      <_InaUnsupportedSetting Include="CustomNativeMain=true" Condition="'$(CustomNativeMain)' == 'true'" Reason="Ina links executables whose entry point is the managed Main" />
+      <_InaUnsupportedSetting Include="StaticExecutable=true" Condition="'$(StaticExecutable)' == 'true'" Reason="the executable is linked dynamically against the C library" />
+      <_InaUnsupportedSetting Include="StaticICULinking=true" Condition="'$(StaticICULinking)' == 'true'" Reason="it needs a native toolchain to build ICU into the application" />
+      <_InaUnsupportedSetting Include="StaticOpenSslLinking=true" Condition="'$(StaticOpenSslLinking)' == 'true'" Reason="it needs a native toolchain to build OpenSSL into the application" />
+      <_InaUnsupportedSetting Include="LinkStandardCPlusPlusLibrary=true" Condition="'$(LinkStandardCPlusPlusLibrary)' == 'true'" Reason="only the C library can be linked dynamically" />
+      <_InaUnsupportedSetting Include="UseSystemZlib=true" Condition="'$(UseSystemZlib)' == 'true'" Reason="only the C library can be linked dynamically" />
+      <_InaUnsupportedSetting Include="UseSystemBrotli=true" Condition="'$(UseSystemBrotli)' == 'true'" Reason="only the C library can be linked dynamically" />
+    </ItemGroup>
+
+    <Error Code="INA1003" Condition="'@(_InaUnsupportedSetting)' != ''"
+           Text="PublishIna does not support %(_InaUnsupportedSetting.Identity): %(_InaUnsupportedSetting.Reason)." />
+  </Target>
+
+  <!--
+    `dotnet publish` restores first, and for an unsupported platform that means downloading a compiler and a
+    runtime pack that will not be used. A project SDK takes part in the restore and can stop before that.
+  -->
+  <Target Name="_InaValidatePublishBeforeRestore" BeforeTargets="Restore" DependsOnTargets="_InaValidatePublish"
+          Condition="'$(_PublishInaEnabled)' == 'true' and '$(_IsPublishing)' == 'true'" />
+
+  <!-- ILCompilerTargetsPath is set once the restore has brought in the NativeAOT targets, which are replaced in part. -->
+  <Import Project="Ina.Sdk.NativeLink.targets"
+          Condition="'$(_PublishInaEnabled)' == 'true' and '$(PublishAot)' == 'true' and '$(ILCompilerTargetsPath)' != ''" />
+
+</Project>

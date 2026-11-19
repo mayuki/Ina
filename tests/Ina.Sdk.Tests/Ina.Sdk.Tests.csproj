@@ -12,6 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Ina.Linker\Ina.Linker.csproj" />
     <ProjectReference Include="..\..\src\Ina.Sdk\Ina.Sdk.csproj" />
   </ItemGroup>
 
