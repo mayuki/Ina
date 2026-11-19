@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/samples/">
     <Project Path="samples/HelloWorld/HelloWorld.csproj" />
+    <Project Path="samples/MinimalApi/MinimalApi.csproj" />
     <Project Path="samples/RuntimeTour/RuntimeTour.csproj" />
   </Folder>
   <Folder Name="/samples/JsonReader/">
@@ -10,11 +11,13 @@
   <Folder Name="/src/">
     <Project Path="src/Ina.Core/Ina.Core.csproj" />
     <Project Path="src/Ina.Linker/Ina.Linker.csproj" />
+    <Project Path="src/Ina.Sdk/Ina.Sdk.csproj" />
     <Project Path="src/Ina/Ina.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Ina.Core.Tests/Ina.Core.Tests.csproj" />
     <Project Path="tests/Ina.EndToEnd.Tests/Ina.EndToEnd.Tests.csproj" />
     <Project Path="tests/Ina.Linker.Tests/Ina.Linker.Tests.csproj" />
+    <Project Path="tests/Ina.Sdk.Tests/Ina.Sdk.Tests.csproj" />
   </Folder>
 </Solution>

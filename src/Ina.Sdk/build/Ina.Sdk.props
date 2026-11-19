@@ -1,0 +1,26 @@
+<!--
+  Entry point of Ina.Sdk, both as a package reference (NuGet imports this file by convention) and as a project SDK
+  (Sdk/Sdk.props imports it).
+
+  As a package reference, Ina cannot take part in the restore: NuGet leaves the build files of packages out of the
+  evaluation that determines what to restore. PublishAot has to be set in the project in that case, because the
+  .NET SDK decides during the restore whether to download ILCompiler and the NativeAOT runtime pack.
+-->
+<Project>
+
+  <!--
+    Both files have to be imported at a position that neither a package nor a project SDK gets by itself, so they
+    are registered with the extension points of the .NET SDK:
+
+    - Before Microsoft.NET.Sdk.targets, and therefore after the body of the project file: PublishIna is known,
+      and the .NET SDK has not looked at PublishAot yet.
+    - After Microsoft.NET.Sdk.targets, and therefore after the NativeAOT targets, which is the only place from
+      where their link step can be replaced: the last definition of a target wins.
+  -->
+  <PropertyGroup Condition="'$(_InaSdkImported)' != 'true'">
+    <_InaSdkImported>true</_InaSdkImported>
+    <BeforeMicrosoftNETSdkTargets>$(BeforeMicrosoftNETSdkTargets);$(MSBuildThisFileDirectory)..\targets\Ina.Sdk.BeforeMicrosoftNETSdk.targets</BeforeMicrosoftNETSdkTargets>
+    <AfterMicrosoftNETSdkTargets>$(AfterMicrosoftNETSdkTargets);$(MSBuildThisFileDirectory)..\targets\Ina.Sdk.AfterMicrosoftNETSdk.targets</AfterMicrosoftNETSdkTargets>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,126 @@
+<!--
+  Replaces the part of the NativeAOT targets (Microsoft.NETCore.Native.targets and
+  Microsoft.NETCore.Native.Unix.targets of the Microsoft.DotNet.ILCompiler package) that depends on a native
+  toolchain. Everything up to and including the compilation with ILCompiler, and the publish steps after the link,
+  stay as they are.
+
+  Two targets are redefined, which works because this file is imported after the originals:
+
+  - SetupOSSpecificProps selects the runtime libraries to link. The original also looks for clang, gcc and objcopy
+    and fails if they are missing.
+  - LinkNative runs the linker. The original calls clang and objcopy.
+-->
+<Project>
+
+  <PropertyGroup>
+    <!-- Ina's linker does not write debug information yet, so ILCompiler does not need to generate it. -->
+    <NativeDebugSymbols>false</NativeDebugSymbols>
+
+    <InaTasksAssembly Condition="'$(InaTasksAssembly)' == ''">$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'tasks', 'net11.0', 'Ina.Sdk.dll'))</InaTasksAssembly>
+    <_InaLinkOptionsFile>$(NativeIntermediateOutputPath)$(TargetName).ina.rsp</_InaLinkOptionsFile>
+  </PropertyGroup>
+
+  <!-- The linker is a .NET library; Runtime="NET" lets MSBuild on .NET Framework (Visual Studio) run the task in a .NET process. -->
+  <UsingTask TaskName="Ina.Sdk.InaLink" AssemblyFile="$(InaTasksAssembly)" Runtime="NET" />
+
+  <!--
+    The libraries of a dynamically linked glibc executable, in the order of the original target: the native parts
+    of the framework first, then the runtime they depend on. ILCompiler turns P/Invokes into the libraries listed
+    as DirectPInvoke into direct calls, which is why the target is a dependency of the compilation as well.
+  -->
+  <Target Name="SetupOSSpecificProps" DependsOnTargets="$(IlcDynamicBuildPropertyDependencies)">
+
+    <PropertyGroup>
+      <FullRuntimeName>libRuntime.WorkstationGC</FullRuntimeName>
+      <FullRuntimeName Condition="'$(ServerGarbageCollection)' == 'true' or '$(IlcLinkServerGC)' == 'true'">libRuntime.ServerGC</FullRuntimeName>
+      <EventPipeName>libeventpipe-disabled</EventPipeName>
+      <EventPipeName Condition="'$(EventSourceSupport)' == 'true'">libeventpipe-enabled</EventPipeName>
+      <VxSortSupportName>libRuntime.VxsortDisabled</VxSortSupportName>
+      <VxSortSupportName Condition="'$(OptimizationPreference)' == 'Speed' or '$(IlcEnableVxsort)' == 'true'">libRuntime.VxsortEnabled</VxSortSupportName>
+      <StandaloneGCSupportName>libstandalonegc-disabled</StandaloneGCSupportName>
+      <StandaloneGCSupportName Condition="'$(IlcStandaloneGCSupport)' == 'true'">libstandalonegc-enabled</StandaloneGCSupportName>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <NetCoreAppNativeLibrary Include="System.Native" />
+      <NetCoreAppNativeLibrary Include="System.Globalization.Native" Condition="'$(InvariantGlobalization)' != 'true'" />
+      <NetCoreAppNativeLibrary Include="System.IO.Compression.Native" />
+      <NetCoreAppNativeLibrary Include="System.Net.Security.Native" />
+      <NetCoreAppNativeLibrary Include="System.Security.Cryptography.Native.OpenSsl" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <DirectPInvoke Include="@(NetCoreAppNativeLibrary)" />
+      <NativeLibrary Include="@(NetCoreAppNativeLibrary->'$(IlcFrameworkNativePath)lib%(Identity).a')" />
+
+      <NativeLibrary Include="$(IlcSdkPath)libbootstrapper.o" />
+      <NativeLibrary Include="$(IlcSdkPath)$(FullRuntimeName).a" />
+      <NativeLibrary Include="$(IlcSdkPath)$(EventPipeName).a" />
+      <!-- The vectorized sort exists for x64, and since .NET 11 for arm64 as well. -->
+      <NativeLibrary Include="$(IlcSdkPath)$(VxSortSupportName).a" Condition="Exists('$(IlcSdkPath)$(VxSortSupportName).a')" />
+      <NativeLibrary Include="$(IlcSdkPath)$(StandaloneGCSupportName).a" />
+      <NativeLibrary Include="$(IlcSdkPath)libaotminipal.a" />
+      <NativeLibrary Include="$(IlcSdkPath)libstdc++compat.a" />
+
+      <!-- zlib, brotli and (since .NET 11) zstd follow System.IO.Compression.Native, which refers to them. -->
+      <NativeLibrary Include="$(IlcFrameworkNativePath)libzstd.a" Condition="Exists('$(IlcFrameworkNativePath)libzstd.a')" />
+      <NativeLibrary Include="$(IlcFrameworkNativePath)libz.a" />
+      <NativeLibrary Include="$(IlcFrameworkNativePath)libbrotlienc.a" />
+      <NativeLibrary Include="$(IlcFrameworkNativePath)libbrotlidec.a" />
+      <NativeLibrary Include="$(IlcFrameworkNativePath)libbrotlicommon.a" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    Writes down what is linked and how. MSBuild decides by time stamps whether a target has to run; this file
+    changes exactly when the link would produce something else, for example when only an option of the link
+    changed and the object file is still up to date.
+  -->
+  <Target Name="_InaWriteLinkOptions" DependsOnTargets="$(LinkNativeDependsOn)">
+
+    <PropertyGroup>
+      <_InaPositionIndependent>true</_InaPositionIndependent>
+      <_InaPositionIndependent Condition="'$(PositionIndependentExecutable)' == 'false'">false</_InaPositionIndependent>
+
+      <!-- NativeAOT strips symbols by default; StripSymbols=false keeps the symbol table. -->
+      <_InaEmitSymbolTable>false</_InaEmitSymbolTable>
+      <_InaEmitSymbolTable Condition="'$(StripSymbols)' == 'false'">true</_InaEmitSymbolTable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_InaLinkInput Include="$(NativeObject);@(NativeLibrary)" />
+
+      <_InaLinkOption Include="--linker:$(InaTasksAssembly)" />
+      <_InaLinkOption Include="--rid:$(RuntimeIdentifier)" />
+      <_InaLinkOption Include="--output:$(NativeBinary)" />
+      <_InaLinkOption Include="--exports:$(ExportsFile)" />
+      <_InaLinkOption Include="--position-independent:$(_InaPositionIndependent)" />
+      <_InaLinkOption Include="--symbol-table:$(_InaEmitSymbolTable)" />
+      <_InaLinkOption Include="@(_InaLinkInput)" />
+    </ItemGroup>
+
+    <WriteLinesToFile File="$(_InaLinkOptionsFile)" Lines="@(_InaLinkOption)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+
+    <ItemGroup>
+      <FileWrites Include="$(_InaLinkOptionsFile)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="LinkNative"
+          Inputs="@(_InaLinkInput);$(_InaLinkOptionsFile)"
+          Outputs="$(NativeBinary)"
+          DependsOnTargets="$(LinkNativeDependsOn);_InaWriteLinkOptions">
+
+    <!-- Arguments for clang cannot be translated, so they are not silently dropped. -->
+    <Warning Code="INA1005" Condition="'@(LinkerArg)' != ''"
+             Text="Ina does not run a native linker, so these linker arguments are ignored: @(LinkerArg, ' ')" />
+
+    <InaLink Inputs="@(_InaLinkInput)"
+             OutputPath="$(NativeBinary)"
+             RuntimeIdentifier="$(RuntimeIdentifier)"
+             ExportsFile="$(ExportsFile)"
+             PositionIndependent="$(_InaPositionIndependent)"
+             EmitSymbolTable="$(_InaEmitSymbolTable)" />
+  </Target>
+
+</Project>

@@ -4,6 +4,10 @@
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <RootNamespace>Ina.EndToEnd.Tests</RootNamespace>
+
+    <!-- The publish tests install Ina.Sdk as a package. NuGet keeps what it extracted for a version, so the tests
+         use a version label of their own, which never collides with a released package. -->
+    <InaSdkTestVersion>$(Version)-e2e</InaSdkTestVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,20 +23,30 @@
     <!-- The samples are the applications under test: they are built along with the tests but not referenced. -->
     <ProjectReference Include="..\..\samples\HelloWorld\HelloWorld.csproj" ReferenceOutputAssembly="false" Private="false" />
     <ProjectReference Include="..\..\samples\JsonReader\JsonReader\JsonReader.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\samples\MinimalApi\MinimalApi.csproj" ReferenceOutputAssembly="false" Private="false" />
     <ProjectReference Include="..\..\samples\RuntimeTour\RuntimeTour.csproj" ReferenceOutputAssembly="false" Private="false" />
+
+    <!-- The SDK is tested as the package that users install; see PackInaSdkForPublishTests. -->
+    <ProjectReference Include="..\..\src\Ina.Sdk\Ina.Sdk.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Lets the tests find the build output of the samples. -->
+    <!-- Lets the tests find the samples and their build output. -->
     <AssemblyMetadata Include="SamplesDirectory" Value="$(MSBuildThisFileDirectory)..\..\samples" />
     <AssemblyMetadata Include="SamplesConfiguration" Value="$(Configuration)" />
     <AssemblyMetadata Include="SamplesTargetFramework" Value="$(TargetFramework)" />
     <!-- The build output of the tool itself, which is compiled to a native executable by the self-hosting test. -->
     <AssemblyMetadata Include="InaAssembly" Value="$(MSBuildThisFileDirectory)..\..\src\Ina\bin\$(Configuration)\$(TargetFramework)\ina.dll" />
+    <AssemblyMetadata Include="InaSdkVersion" Value="$(InaSdkTestVersion)" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+
+  <!-- Packs Ina.Sdk into a package feed next to the test assembly, from which the publish tests restore it. -->
+  <Target Name="PackInaSdkForPublishTests" AfterTargets="Build">
+    <MSBuild Projects="..\..\src\Ina.Sdk\Ina.Sdk.csproj" Targets="Pack" Properties="PackageVersion=$(InaSdkTestVersion);PackageOutputPath=$(TargetDir)feed;NoBuild=true;BuildProjectReferences=false" />
+  </Target>
 
 </Project>

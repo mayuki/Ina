@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Ina.Sdk</RootNamespace>
+    <PackageId>Ina.Sdk</PackageId>
+    <Description>Publishes .NET applications as native executables with Ina: with the PublishIna property, dotnet publish compiles like NativeAOT but needs no native toolchain, also when cross compiling. Usable as an MSBuild project SDK and as a package reference.</Description>
+    <PackageTags>nativeaot;aot;cross-compilation;linker;msbuild;sdk</PackageTags>
+  </PropertyGroup>
+
+  <!--
+    The package carries build logic: MSBuild files and the task with its dependencies. Nothing of it becomes part
+    of the application that uses it, so there is no lib folder and there are no package dependencies.
+  -->
+  <PropertyGroup>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <BuildOutputTargetFolder>tasks</BuildOutputTargetFolder>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludeTaskDependenciesInPackage</TargetsForTfmSpecificBuildOutput>
+
+    <!-- The dependencies of the task are loaded from its own directory; the .deps.json tells MSBuild which they are. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <GenerateDependencyFile>true</GenerateDependencyFile>
+
+    <!-- NU5100: assemblies outside of lib are intended. NU5128: there is no lib folder that dependencies could belong to. -->
+    <NoWarn>$(NoWarn);NU5100;NU5128</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ina.Linker\Ina.Linker.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- MSBuild provides its own assemblies when it runs the task. -->
+    <PackageReference Include="Microsoft.Build.Utilities.Core" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The files keep their directory in the package: Sdk for the project SDK, build for the package reference. -->
+    <None Update="Sdk\*;build\*;targets\*" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ina.Sdk.Tests" />
+  </ItemGroup>
+
+  <Target Name="IncludeTaskDependenciesInPackage" DependsOnTargets="ResolveReferences">
+    <ItemGroup>
+      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths)" TargetPath="%(ReferenceCopyLocalPaths.DestinationSubPath)" />
+      <BuildOutputInPackage Include="$(ProjectDepsFilePath)" TargetPath="$(ProjectDepsFileName)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

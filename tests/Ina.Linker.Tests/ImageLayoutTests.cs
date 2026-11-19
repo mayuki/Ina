@@ -49,6 +49,9 @@ public class ImageLayoutTests : LinkerTestBase
             Assert.Contains("libc.so.6:GLIBC_2.2.5", result.RequiredVersions);
             Assert.Contains("memcpy", result.ImportedSymbols);
 
+            // The newest version that is required decides which C library the image still loads with.
+            Assert.Equal(new Version(2, 14), result.MinimumGlibcVersion);
+
             // Nothing newer than the baseline can ever be required.
             Assert.All(result.RequiredVersions, static v => Assert.True(VersionOf(v) <= new Version(2, 27), v));
         }

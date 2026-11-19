@@ -54,4 +54,28 @@ public sealed record LinkResult(
     int DiscardedSectionCount,
     IReadOnlyList<string> NeededLibraries,
     IReadOnlyList<string> ImportedSymbols,
-    IReadOnlyList<string> RequiredVersions);
+    IReadOnlyList<string> RequiredVersions)
+{
+    /// <summary>
+    /// The oldest GNU C library the image loads with: the newest symbol version it requires, so that
+    /// <c>libc.so.6:GLIBC_2.17</c> yields 2.17. Null when no versioned symbol of glibc is required.
+    /// </summary>
+    public Version? MinimumGlibcVersion
+    {
+        get
+        {
+            const string prefix = "GLIBC_";
+            Version? newest = null;
+            foreach (var requirement in RequiredVersions)
+            {
+                var index = requirement.IndexOf(prefix, StringComparison.Ordinal);
+                if (index >= 0 && Version.TryParse(requirement[(index + prefix.Length)..], out var version) && (newest is null || version > newest))
+                {
+                    newest = version;
+                }
+            }
+
+            return newest;
+        }
+    }
+}

@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Ina.Linker.Tests" />
+    <InternalsVisibleTo Include="Ina.Sdk.Tests" />
   </ItemGroup>
 
 </Project>

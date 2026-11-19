@@ -13,11 +13,13 @@ Projects live in `src` and `tests` under the repository root.
 	- samples (applications used as end-to-end test subjects)
 	- src
 		- Ina (the `ina` command line tool)
-		- Ina.Core (the build pipeline: packs, ILCompiler driver, link step)
+		- Ina.Sdk (the integration into `dotnet publish`: MSBuild project SDK, package and link task)
+		- Ina.Core (the build pipeline of the command: packs, ILCompiler driver, link step)
 		- Ina.Linker (the managed linkers: ELF for Linux, PE for Windows)
 	- tests
 		- Ina.Linker.Tests
 		- Ina.Core.Tests
+		- Ina.Sdk.Tests
 		- Ina.EndToEnd.Tests
 
 ## Project rules

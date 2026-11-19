@@ -107,10 +107,18 @@ internal static class TestEnvironment
         }
     }
 
-    public static Task<ProcessResult> RunAsync(string fileName, params string[] arguments) => RunInDirectoryAsync(string.Empty, fileName, arguments);
+    public static Task<ProcessResult> RunAsync(string fileName, params string[] arguments) => RunAsync(fileName, environment: null, arguments);
+
+    /// <summary>Runs a program with additional or replaced environment variables.</summary>
+    public static Task<ProcessResult> RunAsync(string fileName, IReadOnlyDictionary<string, string?>? environment, params string[] arguments) =>
+        StartAndWaitAsync(string.Empty, fileName, environment, arguments);
 
     /// <summary>Runs a process with <paramref name="workingDirectory"/> as its current directory.</summary>
-    public static async Task<ProcessResult> RunInDirectoryAsync(string workingDirectory, string fileName, params string[] arguments)
+    public static Task<ProcessResult> RunInDirectoryAsync(string workingDirectory, string fileName, params string[] arguments) =>
+        StartAndWaitAsync(workingDirectory, fileName, environment: null, arguments);
+
+    private static async Task<ProcessResult> StartAndWaitAsync(
+        string workingDirectory, string fileName, IReadOnlyDictionary<string, string?>? environment, string[] arguments)
     {
         var startInfo = new ProcessStartInfo(fileName)
         {
@@ -119,6 +127,11 @@ internal static class TestEnvironment
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
+        }
+
+        foreach (var (name, value) in environment ?? new Dictionary<string, string?>())
+        {
+            startInfo.Environment[name] = value;
         }
 
         using var process = await StartWithRetryAsync(startInfo);
