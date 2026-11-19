@@ -146,7 +146,7 @@ What differs from a NativeAOT publish, apart from not needing a toolchain:
 
 | Setting | With `PublishIna` |
 |---|---|
-| `RuntimeIdentifier` (`-r`) | `linux-x64`, `linux-arm64`, `osx-x64` or `osx-arm64`, independent of the machine that publishes. Anything else is an error (INA1002). The Linux targets are tested on a `linux-x64` host and the macOS targets on an `osx-arm64` host; [Verification](docs/Design.md#8-verification) lists the combinations that were only built or not tried |
+| `RuntimeIdentifier` (`-r`) | `linux-x64`, `linux-arm64`, `osx-x64` or `osx-arm64`, independent of the machine that publishes. Anything else is an error (INA1002). The Linux targets are tested on a `linux-x64` host, the macOS targets on an `osx-arm64` and a `linux-arm64` host; [Verification](docs/Design.md#8-verification) lists the combinations that were only built or not tried |
 | `PositionIndependentExecutable` | `false` produces a fixed-address executable for Linux. macOS has none, so there it is an error (INA1003) |
 | `StripSymbols` | `false` keeps the symbol table. There is no debug information, and no `.dbg` file or `.dSYM` bundle yet |
 | `NativeLibrary`, `DirectPInvoke` | Static libraries are linked into the executable, as long as they need nothing but what the import table of the target lists: the C library, and for macOS the frameworks that the .NET runtime itself uses |

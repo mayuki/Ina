@@ -654,6 +654,18 @@ What has been verified, and how:
   comparison needs the same compiler input on both sides: for an application of the web
   SDK that meant setting `EventSourceSupport`, which that SDK only switches on by itself
   when the project sets `PublishAot`.
+- `dotnet publish` for macOS on Linux: in a virtual machine with Debian 12 (arm64) and the
+  .NET SDK 10.0.400, on which neither a native toolchain nor any of Apple's tools exists
+  (no clang, gcc, `ld`, `objcopy`, `strip`, `dsymutil` or `codesign`), all four test
+  assemblies pass. That includes the publish tests for macOS, which publish for `osx-arm64`
+  and `osx-x64` there, and the publish of `linux-arm64`, which runs natively. The samples
+  were also published by hand with only `dotnet` and `sh` on the search path, on Linux and
+  on the Mac: HelloWorld and RuntimeTour come out byte-identical for both architectures.
+  The ASP.NET Core sample does not, and neither do two copies of it in different
+  directories of the same machine, because the assembly that the C# compiler produces for
+  it depends on where the project is. Apple's `codesign` accepts everything that was
+  published on Linux, and the arm64 executables run on the Mac with the output of their
+  counterparts.
 
 Not verified:
 
@@ -670,12 +682,9 @@ Not verified:
 - **Integrity of downloaded packs.** The `ina` command fetches packages over HTTPS from
   nuget.org; their signatures are not validated. (`dotnet publish` restores them with NuGet.)
 - **`dotnet publish` on other hosts.** For Linux targets only the tests named above have
-  run on a Mac, and nothing that was published there has been executed. For macOS
-  targets `dotnet publish` has only been run on a Mac: its tests publish on every host,
-  with nothing but `dotnet` and `sh` on the search path, and the `ina` command has built
-  macOS executables on Linux, but the .NET SDK on Linux with a macOS target has not been
-  tried. Publishing from Windows should work as well, since nothing in the replaced targets
-  runs a shell command, but it has not been tried either. The same holds for MSBuild on
+  run on a Mac, and nothing that was published there has been executed. Publishing from
+  Windows, for Linux or for macOS, should work as well, since nothing in the replaced
+  targets runs a shell command, but it has not been tried. The same holds for MSBuild on
   .NET Framework (Visual Studio, `msbuild.exe`), where the link task has to run in a .NET
   task host.
 - **Other versions of the .NET SDK.** The replaced targets are internals of the NativeAOT
