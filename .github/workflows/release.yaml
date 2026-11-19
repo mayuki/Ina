@@ -1,12 +1,14 @@
 name: Release
 
-# Publishes the ina tool (package Ina) and Ina.Sdk to nuget.org and creates a GitHub release, when the tag of a
-# version is pushed. Both packages carry the version in Directory.Build.props, which the tag has to name: v0.1.0
-# releases 0.1.0. nuget.org accepts the packages through Trusted Publishing, so the repository holds no API key;
-# "Releasing" in README.md lists what has to be set up on nuget.org and in the repository for that.
+# Stages the ina tool (package Ina) and Ina.Sdk on nuget.org and drafts a GitHub release, when the tag of a version
+# is pushed. Both packages carry the version in Directory.Build.props, which the tag has to name: v0.1.0 releases
+# 0.1.0. The packages are uploaded through Trusted Publishing, so the repository holds no API key, and with staged
+# publishing: nuget.org validates them but keeps them private until a maintainer promotes them on the website. The
+# release is complete when the draft is published after that. "Releasing" in README.md describes these steps and
+# what has to be set up on nuget.org and in the repository.
 #
-# The jobs are split by the permissions they need: only the push to nuget.org may request an OIDC token, and only
-# the creation of the release may write to the repository. A failed push or release can be run again on its own.
+# The jobs are split by the permissions they need: only the upload to nuget.org may request an OIDC token, and only
+# the creation of the release may write to the repository.
 
 on:
   push:
@@ -66,18 +68,24 @@ jobs:
           path: artifacts/*.nupkg
           if-no-files-found: error
 
-  publish:
-    name: Publish to nuget.org
+  stage:
+    name: Stage on nuget.org
     needs: [ci, pack]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The Trusted Publishing policy on nuget.org names this environment, and protection rules can be added to it.
+    # The link leads to the packages of the account, where the staged ones are promoted.
     environment:
       name: nuget
-      url: https://www.nuget.org/packages/Ina.Sdk/${{ needs.pack.outputs.version }}
+      url: https://www.nuget.org/account/Packages
     permissions:
+      contents: read # global.json, which selects an SDK that can stage packages (.NET 11 and later)
       id-token: write # the OIDC token that nuget.org exchanges for an API key valid for one hour
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: packages
@@ -87,15 +95,21 @@ jobs:
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
         with:
           user: ${{ secrets.NUGET_USER }}
-      # --skip-duplicate lets a run that failed after the first package try again.
-      - name: Push the packages
+      # Both packages go into one staging group, so that "Promote group" releases them together. The command takes
+      # one package at a time and reads the API key from NUGET_API_KEY.
+      - name: Stage the packages
         env:
           NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
-        run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+          VERSION: ${{ needs.pack.outputs.version }}
+        run: |
+          set -euo pipefail
+          for package in artifacts/*.nupkg; do
+            dotnet package stage push "$package" --source https://api.nuget.org/v3/index.json --group "ina-$VERSION"
+          done
 
   release:
-    name: Create the GitHub release
-    needs: [pack, publish]
+    name: Draft the GitHub release
+    needs: [pack, stage]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -105,9 +119,10 @@ jobs:
         with:
           name: packages
           path: artifacts
+      # A draft, because the packages that the notes link to are not public before they are promoted on nuget.org.
       # The notes start with links to the packages; GitHub appends the changes since the previous release.
       # A version with a pre-release label, such as 0.2.0-preview.1, becomes a pre-release.
-      - name: Create the release
+      - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -122,4 +137,4 @@ jobs:
 
           - [Ina $VERSION](https://www.nuget.org/packages/Ina/$VERSION): the \`ina\` command as a .NET tool
           - [Ina.Sdk $VERSION](https://www.nuget.org/packages/Ina.Sdk/$VERSION): \`dotnet publish\` with \`PublishIna\`"
-          gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg --verify-tag --title "$GITHUB_REF_NAME" --notes "$notes" --generate-notes "${prerelease[@]}"
+          gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg --draft --verify-tag --title "$GITHUB_REF_NAME" --notes "$notes" --generate-notes "${prerelease[@]}"
