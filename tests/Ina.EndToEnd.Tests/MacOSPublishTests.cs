@@ -112,9 +112,6 @@ public class MacOSPublishTests(PublishEnvironment environment)
     [Fact]
     public async Task AspNetCoreApplicationServesRequests()
     {
-        // The web server pulls in the TLS code of the runtime.
-        Assert.SkipUnless(TestEnvironment.MacOSImportsCoverCryptographyOfDotNet11, TestEnvironment.MacOSImportsSkipReason);
-
         // The sample sends requests to itself and prints the responses.
         using var project = new SampleProject(environment, "MinimalApi", "MinimalApi.csproj", InaReference.Sdk);
 

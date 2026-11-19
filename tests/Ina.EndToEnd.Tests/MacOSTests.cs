@@ -170,9 +170,6 @@ public class MacOSTests
     public async Task InaCompilesItselfAndTheNativeToolBuildsAWorkingApplication()
     {
         Assert.SkipUnless(TestEnvironment.CanRunMacOSArm64, SkipReason);
-
-        // The tool downloads packages over HTTPS and hashes them.
-        Assert.SkipUnless(TestEnvironment.MacOSImportsCoverCryptographyOfDotNet11, TestEnvironment.MacOSImportsSkipReason);
         using var directory = new OutputDirectory();
         var hello = Path.Combine(directory.Path, "hello");
         var target = MacOS(TargetArchitecture.Arm64);

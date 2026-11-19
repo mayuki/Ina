@@ -36,21 +36,6 @@ internal static class TestEnvironment
     public static bool CanRunMacOS(Ina.Linker.TargetArchitecture architecture) =>
         architecture == Ina.Linker.TargetArchitecture.Arm64 ? CanRunMacOSArm64 : CanRunMacOSX64;
 
-    /// <summary>Why a test that needs <see cref="MacOSImportsCoverCryptographyOfDotNet11"/> is skipped.</summary>
-    public const string MacOSImportsSkipReason =
-        "The import tables for macOS do not list what the cryptography and TLS code of .NET 11 refers to; regenerate them with eng/generate-macos-abi.sh.";
-
-    /// <summary>
-    /// Whether the import tables for macOS list what the cryptography and TLS code of the .NET 11 runtime refers to.
-    /// For frameworks and the Swift libraries the tables only list what the runtime packs they were generated from
-    /// use. .NET 11 uses more of CryptoKit, the Swift runtime and Network.framework than .NET 10, so an application
-    /// that reaches that code links for macOS only with tables that were generated from the .NET 11 packs as well,
-    /// which takes the macOS SDK (eng/generate-macos-abi.sh). The tests that build such an application are skipped
-    /// until the tables cover it; the function probed for is one that only .NET 11 refers to.
-    /// </summary>
-    public static bool MacOSImportsCoverCryptographyOfDotNet11 { get; } =
-        Ina.Linker.Abi.ImportLibrarySet.ForMacOS(Ina.Linker.TargetArchitecture.Arm64).TryGet("_nw_listener_create", out _);
-
     private const string Arm64Emulator = "qemu-aarch64";
     private const string Arm64SystemRoot = "/usr/aarch64-linux-gnu";
 
