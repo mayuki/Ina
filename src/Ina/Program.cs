@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 
 var assemblyArgument = new Argument<string>("assembly")
 {
-    Description = "The application to compile: a .NET assembly with an entry point, e.g. bin/Release/net10.0/App.dll",
+    Description = "The application to compile: a .NET assembly with an entry point, e.g. bin/Release/net11.0/App.dll",
 };
 var outputOption = new Option<string?>("--output", "-o")
 {
@@ -34,7 +34,7 @@ var optimizeOption = new Option<string>("--optimize", "-O")
 optimizeOption.AcceptOnlyFromAmong("blended", "speed", "size", "none");
 var runtimeVersionOption = new Option<string?>("--runtime-version")
 {
-    Description = "Version of the .NET runtime packs to compile against, e.g. 10.0.3 [default: newest patch of the app's framework]",
+    Description = "Version of the .NET runtime packs to compile against, e.g. 11.0.1 [default: newest patch of the app's framework]",
 };
 var invariantOption = new Option<bool>("--invariant-globalization")
 {

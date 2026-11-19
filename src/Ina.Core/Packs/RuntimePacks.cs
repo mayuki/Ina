@@ -5,6 +5,9 @@ namespace Ina.Packs;
 /// <summary>The packages a build needs: the compiler for the host and the runtime libraries for the target.</summary>
 public sealed record RuntimePacks(string Version, string CompilerDirectory, string RuntimeDirectory, TargetPlatform Target)
 {
+    /// <summary>The numeric part of <see cref="Version"/>, without a prerelease label.</summary>
+    public System.Version RuntimeVersion => ParseVersion(Version)?.Version ?? throw new InaException($"'{Version}' is not a valid runtime pack version.");
+
     /// <summary>The ILCompiler executable, a native program for the host machine.</summary>
     public string CompilerPath => Path.Combine(CompilerDirectory, "tools", OperatingSystem.IsWindows() ? "ilc.exe" : "ilc");
 

@@ -26,8 +26,9 @@
     <!-- Lets the tests find the build output of the samples. -->
     <AssemblyMetadata Include="SamplesDirectory" Value="$(MSBuildThisFileDirectory)..\..\samples" />
     <AssemblyMetadata Include="SamplesConfiguration" Value="$(Configuration)" />
+    <AssemblyMetadata Include="SamplesTargetFramework" Value="$(TargetFramework)" />
     <!-- The build output of the tool itself, which is compiled to a native executable by the self-hosting test. -->
-    <AssemblyMetadata Include="InaAssembly" Value="$(MSBuildThisFileDirectory)..\..\src\Ina\bin\$(Configuration)\net10.0\ina.dll" />
+    <AssemblyMetadata Include="InaAssembly" Value="$(MSBuildThisFileDirectory)..\..\src\Ina\bin\$(Configuration)\$(TargetFramework)\ina.dll" />
   </ItemGroup>
 
   <ItemGroup>

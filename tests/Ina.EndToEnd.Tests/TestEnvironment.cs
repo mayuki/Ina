@@ -42,7 +42,7 @@ internal static class TestEnvironment
     public static string SampleAssembly(string projectDirectory, string assemblyName)
     {
         var path = Path.GetFullPath(Path.Combine(
-            Metadata["SamplesDirectory"], projectDirectory, "bin", Metadata["SamplesConfiguration"], "net10.0", assemblyName + ".dll"));
+            Metadata["SamplesDirectory"], projectDirectory, "bin", Metadata["SamplesConfiguration"], Metadata["SamplesTargetFramework"], assemblyName + ".dll"));
         Assert.True(File.Exists(path), $"The sample was not built: {path}");
         return path;
     }

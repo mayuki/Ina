@@ -55,6 +55,7 @@ internal sealed partial class LinkSession
     {
         AddStartupObject();
         LoadInputs();
+        RequestExportedSymbols();
         ResolveFromArchives();
         AddCLibraryStubs();
         DefineLinkerSymbols();
@@ -185,6 +186,28 @@ internal sealed partial class LinkSession
             else
             {
                 throw new LinkerException($"{input.Name}: unknown file format (expected an ELF object or an ar archive)");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Makes the exported symbols candidates for archive resolution, like <c>-u symbol</c> of other linkers: what is
+    /// exported may live in an archive member that nothing else refers to. A symbol that no input defines is simply
+    /// not exported.
+    /// </summary>
+    private void RequestExportedSymbols()
+    {
+        foreach (var name in _options.ExportedSymbols)
+        {
+            if (!_globals.TryGetValue(name, out var symbol))
+            {
+                symbol = new Symbol(name);
+                _globals.Add(name, symbol);
+            }
+
+            if (symbol.Kind == SymbolKind.Undefined)
+            {
+                _unresolved.Enqueue(symbol);
             }
         }
     }

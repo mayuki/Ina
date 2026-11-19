@@ -122,7 +122,7 @@ public class SampleApplicationTests
         Assert.True(File.Exists(Path.Combine(directory.Path, "obj", "HelloWorld.o")));
         Assert.True(File.Exists(Path.Combine(directory.Path, "obj", "HelloWorld.ilc.rsp")));
         Assert.Equal(new FileInfo(build.OutputPath).Length, build.OutputSize);
-        Assert.StartsWith("10.0.", build.RuntimeVersion);
+        Assert.StartsWith("11.0.", build.RuntimeVersion);
     }
 
     [Fact]

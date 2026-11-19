@@ -43,7 +43,29 @@ public class IlcArgumentsTests
         Assert.Contains("--directpinvoke:System.Native", arguments);
         Assert.Contains("--directpinvoke:System.Globalization.Native", arguments);
         Assert.Contains("--initassembly:System.Private.CoreLib", arguments);
+    }
+
+    [Fact]
+    public void DiagnosticsEntryPointAndStackTraceDataFollowTheCompilerOfDotNet11()
+    {
+        var arguments = IlcArguments.Build(Options);
+
+        Assert.Contains("--export-dynamic-symbol:DotNetRuntimeContractDescriptor", arguments);
+        Assert.Contains("--stacktracedata:frames", arguments);
+        Assert.Equal("DotNetRuntimeContractDescriptor", IlcArguments.DiagnosticsSymbol(new Version(11, 0)));
+    }
+
+    [Fact]
+    public void CompilerOfDotNet10GetsTheArgumentsItUnderstands()
+    {
+        var arguments = IlcArguments.Build(Options with { RuntimeVersion = new Version(10, 0, 14) });
+
+        // .NET 10 exposes the runtime to diagnostic tools through a different symbol, and its --stacktracedata
+        // switch takes no value.
         Assert.Contains("--export-dynamic-symbol:DotNetRuntimeDebugHeader", arguments);
+        Assert.Contains("--stacktracedata", arguments);
+        Assert.DoesNotContain("--stacktracedata:frames", arguments);
+        Assert.Equal("DotNetRuntimeDebugHeader", IlcArguments.DiagnosticsSymbol(new Version(10, 0)));
     }
 
     [Fact]

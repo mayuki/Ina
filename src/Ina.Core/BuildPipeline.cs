@@ -62,6 +62,8 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
         ("libSystem.Native.a", true),
         ("libSystem.Globalization.Native.a", true),
         ("libSystem.IO.Compression.Native.a", true),
+        // Zstandard is part of the runtime pack since .NET 11; it follows its only user in the link order.
+        ("libzstd.a", false),
         ("libSystem.Net.Security.Native.a", true),
         ("libSystem.Security.Cryptography.Native.OpenSsl.a", true),
         ("libz.a", false),
@@ -118,6 +120,7 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
                 References = CollectReferences(app, packs),
                 Optimization = options.Optimization,
                 RuntimeKnobs = EffectiveKnobs(app, options),
+                RuntimeVersion = packs.RuntimeVersion,
             };
             logger.LogInformation("Compiling {Assembly} for {Target}", Path.GetFileName(app.Path), options.Target.RuntimeIdentifier);
             await new IlcCompiler(logger).CompileAsync(packs.CompilerPath, ilcOptions, Path.Combine(intermediate, app.Name + ".ilc.rsp"), cancellationToken)
@@ -143,7 +146,7 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
                         Inputs = [LinkInput.FromFile(objectPath), .. CollectNativeLibraries(packs)],
                         PositionIndependent = options.PositionIndependent,
                         EmitSymbolTable = options.EmitSymbolTable,
-                        ExportedSymbols = [IlcArguments.DebugHeaderSymbol],
+                        ExportedSymbols = [IlcArguments.DiagnosticsSymbol(packs.RuntimeVersion)],
                     },
                     logger);
             }

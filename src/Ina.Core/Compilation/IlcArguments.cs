@@ -33,6 +33,12 @@ public sealed record IlcOptions
 
     /// <summary>Emit DWARF debug information into the object file.</summary>
     public bool DebugInfo { get; init; }
+
+    /// <summary>
+    /// Version of the compiler, which is the version of the runtime packs. The command line of ILCompiler is not
+    /// stable across major versions, so a few arguments depend on it.
+    /// </summary>
+    public Version RuntimeVersion { get; init; } = new(11, 0);
 }
 
 /// <summary>
@@ -87,8 +93,12 @@ public static class IlcArguments
         "System.Security.Cryptography.Native.OpenSsl",
     ];
 
-    /// <summary>The symbol through which diagnostic tools find the runtime; it stays visible in the executable.</summary>
-    public const string DebugHeaderSymbol = "DotNetRuntimeDebugHeader";
+    /// <summary>
+    /// The symbol through which diagnostic tools find the runtime; it stays visible in the executable. .NET 11
+    /// replaced the debug header of earlier versions with the data contract descriptor.
+    /// </summary>
+    public static string DiagnosticsSymbol(Version runtimeVersion) =>
+        runtimeVersion.Major >= 11 ? "DotNetRuntimeContractDescriptor" : "DotNetRuntimeDebugHeader";
 
     public static IReadOnlyList<string> Build(IlcOptions options)
     {
@@ -115,7 +125,7 @@ public static class IlcArguments
             arguments.Add("-g");
         }
 
-        arguments.Add($"--export-dynamic-symbol:{DebugHeaderSymbol}");
+        arguments.Add($"--export-dynamic-symbol:{DiagnosticsSymbol(options.RuntimeVersion)}");
         arguments.AddRange(InitAssemblies.Select(static assembly => $"--initassembly:{assembly}"));
         arguments.AddRange(DirectPInvokeLibraries.Select(static library => $"--directpinvoke:{library}"));
 
@@ -132,7 +142,8 @@ public static class IlcArguments
         arguments.AddRange(knobs.Select(static knob => $"--runtimeknob:{knob.Key}={knob.Value}"));
         arguments.Add($"--runtimeknob:RUNTIME_IDENTIFIER={options.Target.RuntimeIdentifier}");
 
-        arguments.Add("--stacktracedata");
+        // Stack traces show method names. Since .NET 11 the switch takes the level of detail.
+        arguments.Add(options.RuntimeVersion.Major >= 11 ? "--stacktracedata:frames" : "--stacktracedata");
         arguments.Add("--scanreflection");
         arguments.Add($"--methodbodyfolding:{(options.Optimization == OptimizationMode.None ? "none" : "generic")}");
         switch (options.Optimization)

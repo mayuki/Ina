@@ -42,6 +42,23 @@ public class GarbageCollectionTests : LinkerTestBase
     }
 
     [Fact]
+    public void ExportedSymbolIsPulledFromAnArchiveEvenIfNothingRefersToIt()
+    {
+        // Since .NET 11 the runtime library itself holds the descriptor that diagnostic tools look for, in a member
+        // that no code references. Exporting the symbol has to load that member, like "-u symbol" does.
+        var descriptor = new ElfObjectBuilder();
+        descriptor.Global("runtime_descriptor", descriptor.Data(".data", [1, 2, 3, 4]), size: 4, type: SymbolType.Object);
+        var archive = ArchiveBuilder.Build(withSymbolTable: true, ("descriptor.o", descriptor.Build()));
+
+        var output = Link(static o => o with { ExportedSymbols = ["runtime_descriptor", "not_defined_anywhere"] }, Code.Function("main", Code.Return(0)), archive);
+
+        // An export that no input defines is not an error: older runtimes name their descriptor differently.
+        var image = Load(output);
+        Assert.Contains("runtime_descriptor", image.DynamicSymbols);
+        Assert.DoesNotContain("not_defined_anywhere", image.DynamicSymbols);
+    }
+
+    [Fact]
     public void ExportedSymbolCanBeLookedUpAtRunTime()
     {
         // Diagnostic tools locate the runtime through an exported symbol, so the dynamic symbol table and its hash

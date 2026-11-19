@@ -4,9 +4,6 @@
     <RootNamespace>Ina.Linker</RootNamespace>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-  </ItemGroup>
 
   <ItemGroup>
     <!-- Import tables of the supported C libraries; see eng/generate-abi.sh. -->
