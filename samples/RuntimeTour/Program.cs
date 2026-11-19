@@ -200,7 +200,8 @@ Section("files and environment", () =>
             stream.Write("fourth\n"u8);
         }
 
-        Check("append", new FileInfo(file).Length == "first\nsecond\nthird\nfourth\n".Length);
+        // WriteAllLines ends lines the way the platform does; the appended bytes are written as they are.
+        Check("append", new FileInfo(file).Length == $"first{Environment.NewLine}second{Environment.NewLine}third{Environment.NewLine}fourth\n".Length);
         Check("enumerate", Directory.GetFiles(directory).Length == 1);
         File.Delete(file);
         Check("delete", !File.Exists(file));
