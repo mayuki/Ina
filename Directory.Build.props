@@ -7,7 +7,24 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
 
-    <!-- The version of the packages (the ina tool and Ina.Sdk), which are released together. -->
+    <!--
+      The version of the packages (the ina tool and Ina.Sdk), which are released together. Pushing the tag
+      v$(Version) releases them, see .github/workflows/release.yaml.
+    -->
     <Version>0.1.0</Version>
   </PropertyGroup>
+
+  <!-- The metadata of the packages. The repository URL and commit come from Source Link. -->
+  <PropertyGroup>
+    <Authors>Mayuki Sawatari</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/mayuki/Ina</PackageProjectUrl>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The README of the repository is the page of both packages on nuget.org. -->
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
 </Project>

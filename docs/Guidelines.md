@@ -3,11 +3,12 @@ Projects live in `src` and `tests` under the repository root.
 
 - repository root
 	- .gitignore
-	- .github (continuous integration)
+	- .github (continuous integration and releases)
 	- Ina.slnx
 	- global.json
 	- Directory.Build.props / Directory.Packages.props
 	- dotnet-tools.json
+	- LICENSE
 	- eng (engineering scripts, e.g. regenerating the import tables of the system libraries)
 	- docs
 	- samples (applications used as end-to-end test subjects)
