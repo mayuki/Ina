@@ -8,7 +8,41 @@ Using Ina, you can cross-compile native executables for a target platform that d
 - Build Linux executables on Windows.
 - Build Windows executables on macOS.
 
-It plugs into `dotnet publish`, where it takes the place of NativeAOT's native link:
+Ina comes as two packages on nuget.org, released together under one version:
+
+- **[`Ina.Sdk`](https://www.nuget.org/packages/Ina.Sdk)** — the primary, recommended way
+  to use Ina. It is an MSBuild project SDK that plugs into `dotnet publish`, where it
+  takes the place of NativeAOT's native link.
+- **[`Ina`](https://www.nuget.org/packages/Ina)** — an alternative, standalone .NET tool
+  (the `ina` command) for compiling an assembly that is already built.
+
+> **Status: proof of concept.** Linux and macOS executables for x64 and arm64 and Windows
+> executables for x64 work, including cross compilation: from the same assemblies, a
+> Windows executable built on Linux is byte-identical to the one built on Windows. Windows
+> on arm64 is implemented but has not been run on real hardware, and macOS executables for
+> x64 have not been run either. See [Status](#status) for what is and is not covered.
+
+## Quick start
+
+The recommended way to use Ina is through `Ina.Sdk` and `dotnet publish`. Add `Ina.Sdk`
+to your project file and enable `PublishIna` — nothing has to be installed beforehand,
+because NuGet restores `Ina.Sdk` from nuget.org along with the project:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Sdk Name="Ina.Sdk" Version="0.1.0" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <PublishIna>true</PublishIna>
+  </PropertyGroup>
+
+</Project>
+```
+
+Then publish for your target platform with `dotnet publish`:
 
 ```console
 $ dotnet publish -r linux-arm64        # a project with <PublishIna>true</PublishIna>, on an x64 machine
@@ -18,7 +52,11 @@ $ dotnet publish -r linux-arm64        # a project with <PublishIna>true</Publis
   App -> /work/App/bin/Release/net11.0/linux-arm64/publish/
 ```
 
-and it is a command of its own for an assembly that is already built:
+### Alternative: compiling an already-built assembly
+
+Alternatively, if you already have a built assembly and have installed the standalone
+`ina` tool (see [Getting started](#getting-started)), you can compile it directly for
+Linux or Windows:
 
 ```console
 $ dotnet build -c Release samples/HelloWorld
@@ -37,12 +75,45 @@ $ ina samples/HelloWorld/bin/Release/net11.0/HelloWorld.dll --os macos --arch ar
 HelloWorld.dll -> /work/HelloWorld (1.3 MB, osx-arm64, .NET 11.0.0, macOS 14.0+, compile 0.9s, link 0.14s)
 ```
 
+## Getting started
 
-> **Status: proof of concept.** Linux and macOS executables for x64 and arm64 and Windows
-> executables for x64 work, including cross compilation: from the same assemblies, a
-> Windows executable built on Linux is byte-identical to the one built on Windows. Windows
-> on arm64 is implemented but has not been run on real hardware, and macOS executables for
-> x64 have not been run either. See [Status](#status) for what is and is not covered.
+**Requirements:** the .NET 11 SDK, and access to nuget.org the first time a target is
+used (the packs are cached afterwards).
+
+The application is compiled the way `PublishAot` compiles it, so the same rules apply
+to both ways of using Ina: no runtime code generation, reflection only where the compiler
+can see it, and `System.Text.Json` through source generation (see `samples/JsonReader`).
+
+### Primary path: `Ina.Sdk` with `dotnet publish`
+
+`Ina.Sdk` is an MSBuild project SDK that is used in addition to the .NET SDK. Nothing has
+to be installed beforehand: a project refers to `Ina.Sdk` and sets `PublishIna` (as shown
+in [Quick start](#quick-start)), and NuGet restores the SDK from nuget.org along with the
+project.
+
+See [Publishing a project with `dotnet publish`](#publishing-a-project-with-dotnet-publish)
+below for full configuration details, including `global.json`, command-line options, and
+`PackageReference`.
+
+### Alternative: installing the `ina` command
+
+If you want to compile an assembly that is already built without modifying its project
+file, `ina` can be installed as a .NET tool (a package of about 680 KB), either for the
+user:
+
+```console
+$ dotnet tool install --global Ina
+$ ina --help
+```
+
+or as a local tool of a repository, which records the version in the tool manifest of
+the repository:
+
+```console
+$ dotnet new tool-manifest                       # if the repository has none yet
+$ dotnet tool install Ina
+$ dotnet ina bin/Release/net11.0/MyApp.dll
+```
 
 ## How it works
 
@@ -95,38 +166,15 @@ need the Visual C++ redistributable.
 [docs/Design.md](docs/Design.md) explains the design, the alternatives that were
 considered and the internals of the linkers.
 
-## Usage
-
-Requirements: the .NET 11 SDK, and access to nuget.org the first time a target is
-used (the packs are cached afterwards).
-
-The application is compiled the way `PublishAot` compiles it, so the same rules apply
-to both ways of using Ina: no runtime code generation, reflection only where the compiler
-can see it, and `System.Text.Json` through source generation (see `samples/JsonReader`).
-
-Ina comes as two packages on nuget.org, released together under one version:
-[`Ina.Sdk`](https://www.nuget.org/packages/Ina.Sdk) plugs into `dotnet publish`, and
-[`Ina`](https://www.nuget.org/packages/Ina) is the `ina` command, a .NET tool.
+## Usage in detail
 
 ### Publishing a project with `dotnet publish`
 
-`Ina.Sdk` is an MSBuild project SDK that is used in addition to the .NET SDK. A project
-refers to it and sets `PublishIna`. NuGet restores the SDK from nuget.org along with the
-project, so nothing has to be installed beforehand:
-
-```xml
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <Sdk Name="Ina.Sdk" Version="0.1.0" />
-
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net11.0</TargetFramework>
-    <PublishIna>true</PublishIna>
-  </PropertyGroup>
-
-</Project>
-```
+Publishing with `Ina.Sdk` and `dotnet publish` is the main, recommended way to use Ina.
+Add `<Sdk Name="Ina.Sdk" Version="0.1.0" />` to a project that uses `Microsoft.NET.Sdk`
+(or `Microsoft.NET.Sdk.Web`) and set `<PublishIna>true</PublishIna>`, as shown in
+[Quick start](#quick-start). You can then publish for the current machine or cross
+compile for any supported target:
 
 ```console
 $ dotnet publish                       # for this machine
@@ -144,6 +192,8 @@ does for NativeAOT (analyzers, trimming, ILCompiler, the properties documented f
 [Native AOT deployment](https://learn.microsoft.com/dotnet/core/deploying/native-aot/))
 and Ina links the result. An application of `Microsoft.NET.Sdk.Web` is published the same
 way (see `samples/MinimalApi`).
+
+#### Configuration variants
 
 - The version of the SDK can also be given in `global.json`
   (`"msbuild-sdks": { "Ina.Sdk": "0.1.0" }`), with `<Sdk Name="Ina.Sdk" />` in the project.
@@ -164,6 +214,8 @@ way (see `samples/MinimalApi`).
   </ItemGroup>
   ```
 
+#### Differences from a NativeAOT publish
+
 What differs from a NativeAOT publish, apart from not needing a toolchain:
 
 | Setting | With `PublishIna` |
@@ -177,29 +229,16 @@ What differs from a NativeAOT publish, apart from not needing a toolchain:
 | `LinkerArg` | Ignored with a warning (INA1005): no native linker runs |
 | `NativeLib`, `CustomNativeMain`, `StaticExecutable`, `StaticICULinking`, `StaticOpenSslLinking`, `LinkStandardCPlusPlusLibrary`, `UseSystemZlib`, `UseSystemBrotli` | Not supported (error INA1003) |
 
+#### Platform notes
+
 A macOS executable is signed ad hoc by the linker, like the ones of the `ina` command, so
 it runs on the Mac it is copied to without further steps. A Windows executable depends on
 nothing but DLLs that are part of Windows, whichever system it was published on: publishing
 for Windows needs neither Visual Studio nor the Windows SDK.
 
-### Compiling an assembly with the `ina` command
+### Alternative: compiling an assembly with the `ina` command
 
-`ina` is installed as a .NET tool (a package of about 680 KB), either for the user:
-
-```console
-$ dotnet tool install --global Ina
-$ ina --help
-```
-
-or as a local tool of a repository, which records the version in the tool manifest of
-the repository:
-
-```console
-$ dotnet new tool-manifest                       # if the repository has none yet
-$ dotnet tool install Ina
-$ dotnet ina bin/Release/net11.0/MyApp.dll
-```
-
+If you already have a built assembly and prefer a standalone command over `dotnet publish`,
 `ina` takes the application assembly as produced by `dotnet build` (framework-dependent
 output is what you want; the dependencies next to it are picked up automatically).
 
@@ -231,20 +270,21 @@ $ ina bin/Release/net11.0/App.dll --os macos --arch x64 -o App-mac
 App.dll -> /work/App-mac (1.3 MB, osx-x64, .NET 11.0.0, macOS 14.0+, compile 1.2s, link 0.12s)
 ```
 
-An application that was built as a graphical Windows application (`OutputType=WinExe`)
-becomes an executable for the Windows subsystem, which starts without a console window.
+**Platform notes:**
 
-macOS executables are ad-hoc signed by the linker, which is all macOS asks of a program
-that is run from a terminal. An executable that is built on Windows has to be made
-executable (`chmod +x`) after it has been copied to the Mac, because Windows file
-systems do not record that.
+- An application that was built as a graphical Windows application (`OutputType=WinExe`)
+  becomes an executable for the Windows subsystem, which starts without a console window.
+- macOS executables are ad-hoc signed by the linker, which is all macOS asks of a program
+  that is run from a terminal. An executable that is built on Windows has to be made
+  executable (`chmod +x`) after it has been copied to the Mac, because Windows file
+  systems do not record that.
 
-Environment variables: `INA_PACKS` (pack cache, default `~/.ina/packs`),
+**Environment variables:** `INA_PACKS` (pack cache, default `~/.ina/packs`),
 `INA_NUGET_SOURCE` (NuGet v3 flat container to download packs from),
 `NUGET_PACKAGES` (the NuGet global packages folder is reused read-only).
 
-The command knows the base class library only. Applications that need a shared framework
-such as ASP.NET Core are published with `dotnet publish`.
+**Limitations:** The command knows the base class library only. Applications that need a
+shared framework such as ASP.NET Core are published with `dotnet publish`.
 
 ## Status
 
@@ -267,7 +307,7 @@ same inputs, the comparison of executables built on Linux and on a Mac, and a la
 program that exercises cryptography and TLS. See
 [Verification](docs/Design.md#10-verification).
 
-Not done yet:
+**Not done yet:**
 
 - **Running `osx-x64` executables.** They have been compared instruction by instruction
   with what Apple's linker produces from the same inputs, but the Mac has no Rosetta
@@ -292,7 +332,7 @@ Not done yet:
 
 Verification gaps are listed in [docs/Design.md](docs/Design.md#10-verification).
 
-## Repository
+## Repository layout
 
 | Path | Content |
 |---|---|
@@ -307,6 +347,8 @@ Verification gaps are listed in [docs/Design.md](docs/Design.md#10-verification)
 | `docs` | [Design](docs/Design.md) and [project guidelines](docs/Guidelines.md) |
 
 ## Development
+
+### Building and testing
 
 ```console
 $ dotnet build
@@ -340,6 +382,10 @@ repository opts in with the repository variable `ARM64_RUNNERS=true`. No job run
 macOS executables are built and inspected on the Linux and Windows machines, not run.
 
 ### Trying the tool and the packages from the source tree
+
+The steps below are for trying unreleased builds from a local checkout during
+development; normal use installs released packages from nuget.org (see
+[Getting started](#getting-started)).
 
 `ina` runs straight from the build output:
 
