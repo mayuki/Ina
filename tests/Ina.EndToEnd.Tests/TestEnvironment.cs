@@ -97,12 +97,20 @@ internal static class TestEnvironment
         }
     }
 
-    public static async Task<ProcessResult> RunAsync(string fileName, params string[] arguments)
+    public static Task<ProcessResult> RunAsync(string fileName, params string[] arguments) => RunAsync(fileName, environment: null, arguments);
+
+    /// <summary>Runs a program with additional or replaced environment variables.</summary>
+    public static async Task<ProcessResult> RunAsync(string fileName, IReadOnlyDictionary<string, string?>? environment, params string[] arguments)
     {
         var startInfo = new ProcessStartInfo(fileName) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
+        }
+
+        foreach (var (name, value) in environment ?? new Dictionary<string, string?>())
+        {
+            startInfo.Environment[name] = value;
         }
 
         using var process = await StartWithRetryAsync(startInfo);

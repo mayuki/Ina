@@ -1,0 +1,5 @@
+<!--
+  Intentionally empty. MSBuild imports Sdk.targets of every project SDK, but the targets of Ina have to be placed
+  relative to those of the .NET SDK rather than relative to the project file; build/Ina.Sdk.props registers them.
+-->
+<Project />

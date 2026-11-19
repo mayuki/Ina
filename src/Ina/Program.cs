@@ -108,7 +108,7 @@ root.SetAction(async (parseResult, cancellationToken) =>
         Console.Out.WriteLine(
             $"{Path.GetFileName(options.AssemblyPath)} -> {result.OutputPath} " +
             $"({result.OutputSize / 1024.0 / 1024.0:F1} MB, {options.Target.RuntimeIdentifier}, .NET {result.RuntimeVersion}" +
-            $"{Summary.MinimumCLibrary(result.Link.RequiredVersions)}, " +
+            $"{(result.Link.MinimumGlibcVersion is { } glibc ? $", glibc {glibc}+" : string.Empty)}, " +
             $"compile {result.CompileTime.TotalSeconds:F1}s, link {result.LinkTime.TotalSeconds:F2}s)");
         return 0;
     }

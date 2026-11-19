@@ -1,0 +1,25 @@
+<!--
+  Imported after the body of the project file and before the targets of the .NET SDK.
+  Turns the PublishIna switch into the settings that the .NET SDK understands.
+-->
+<Project>
+
+  <PropertyGroup>
+    <!-- A property given on the command line cannot be rewritten, so the normalized switch is a property of its own. -->
+    <_PublishInaEnabled>false</_PublishInaEnabled>
+    <_PublishInaEnabled Condition="'$(PublishIna)' == 'true' or '$(PublishIna)' == 'enable'">true</_PublishInaEnabled>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(_PublishInaEnabled)' == 'true'">
+    <!--
+      Publishing with Ina is publishing with NativeAOT up to the link: the .NET SDK restores ILCompiler and the
+      runtime pack, enables the analyzers, infers the runtime identifier and compiles. Only a project SDK can
+      switch that on, because the restore has to see it too.
+    -->
+    <PublishAot Condition="'$(PublishAot)' == '' and '$(_InaIsProjectSdk)' == 'true'">true</PublishAot>
+
+    <!-- The NativeAOT targets refuse to target another operating system because they cannot link for it. Ina can. -->
+    <DisableUnsupportedError>true</DisableUnsupportedError>
+  </PropertyGroup>
+
+</Project>
