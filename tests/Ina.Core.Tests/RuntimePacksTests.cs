@@ -51,6 +51,7 @@ public class RuntimePacksTests
         Assert.Equal(Path.Combine(nuget, CompilerId.ToLowerInvariant(), "10.0.7"), packs.CompilerDirectory);
         Assert.Equal(Path.Combine(packs.CompilerDirectory, "tools", OperatingSystem.IsWindows() ? "ilc.exe" : "ilc"), packs.CompilerPath);
         Assert.Equal(Path.Combine(packs.RuntimeDirectory, "runtimes", "linux-arm64", "native"), packs.NativeDirectory);
+        Assert.Empty(packs.DirectPInvokeLists);
     }
 
     [Fact]
@@ -81,6 +82,26 @@ public class RuntimePacksTests
         var requests = handler.Requests.Count;
         await RuntimePacks.ResolveAsync(store, LinuxArm64, new Version(10, 0), requestedVersion: null, NullLogger.Instance, TestContext.Current.CancellationToken);
         Assert.Equal(requests, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task WindowsTargetsAlsoNeedTheListOfDirectlyCallableWindowsApis()
+    {
+        using var directory = new TemporaryDirectory();
+        var windows = new TargetPlatform(TargetOperatingSystem.Windows, TargetArchitecture.X64);
+        var handler = new FeedHandler();
+        handler.AddVersions(RuntimePacks.RuntimePackageId(windows), "11.0.0");
+        handler.AddPackage(CompilerId, "11.0.0", ("tools/ilc", "compiler"));
+        handler.AddPackage(RuntimePacks.RuntimePackageId(windows), "11.0.0", ("runtimes/win-x64/native/bootstrapper.obj", "object"));
+        handler.AddPackage(RuntimePacks.CompilerSupportPackageId, "11.0.0", ("build/WindowsAPIs.txt", "kernel32!Sleep"));
+        using var store = new PackageStore(directory.Combine("cache"), [], Feed, NullLogger.Instance, handler);
+
+        var packs = await RuntimePacks.ResolveAsync(store, windows, new Version(11, 0), requestedVersion: null, NullLogger.Instance, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Microsoft.NETCore.App.Runtime.NativeAOT.win-x64", RuntimePacks.RuntimePackageId(windows));
+        Assert.Equal("kernel32!Sleep", File.ReadAllText(Assert.Single(packs.DirectPInvokeLists)));
+        Assert.True(File.Exists(Path.Combine(packs.NativeDirectory, "bootstrapper.obj")));
+
     }
 
     [Fact]

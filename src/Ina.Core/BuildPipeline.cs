@@ -16,7 +16,10 @@ public sealed record BuildOptions
     /// <summary>The application: a .NET assembly with an entry point.</summary>
     public required string AssemblyPath { get; init; }
 
-    /// <summary>The executable to write. Defaults to the assembly name in the current directory.</summary>
+    /// <summary>
+    /// The executable to write. Defaults to the assembly name in the current directory, with the extension that
+    /// executables have on the target system.
+    /// </summary>
     public string? OutputPath { get; init; }
 
     public required TargetPlatform Target { get; init; }
@@ -29,10 +32,10 @@ public sealed record BuildOptions
     /// <summary>Overrides <c>System.Globalization.Invariant</c>; invariant mode removes the dependency on ICU.</summary>
     public bool? InvariantGlobalization { get; init; }
 
-    /// <summary>Keep a symbol table in the executable for debuggers and profilers.</summary>
+    /// <summary>Keep a symbol table in the executable for debuggers and profilers. Only Linux executables have one.</summary>
     public bool EmitSymbolTable { get; init; }
 
-    /// <summary>Produce a position independent executable.</summary>
+    /// <summary>Produce an executable that can be loaded at any address, so that the system can randomize it.</summary>
     public bool PositionIndependent { get; init; } = true;
 
     /// <summary>Where the object file and the compiler response file are written.</summary>
@@ -45,15 +48,15 @@ public sealed record BuildResult(
 
 /// <summary>
 /// Turns a .NET application into a native executable in three steps: resolve the packs, compile IL to an object
-/// file with ILCompiler, and link it with the runtime libraries using Ina's own linker.
+/// file with ILCompiler, and link it with the runtime libraries using one of Ina's own linkers.
 /// </summary>
 public sealed class BuildPipeline(PackageStore packages, ILogger logger)
 {
     /// <summary>
-    /// Runtime libraries in link order. Entries marked optional do not exist for every architecture, and
-    /// <c>{crypto}</c> stands for the cryptography library of the target platform.
+    /// Runtime libraries for Linux and macOS in link order. Entries marked optional do not exist for every
+    /// system, architecture or version.
     /// </summary>
-    private static readonly (string Name, bool Required)[] NativeLibraries =
+    private static (string Name, bool Required)[] UnixLibraries(TargetPlatform target) =>
     [
         ("libbootstrapper.o", true),
         ("libRuntime.WorkstationGC.a", true),
@@ -65,12 +68,34 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
         ("libSystem.Native.a", true),
         ("libSystem.Globalization.Native.a", true),
         ("libSystem.IO.Compression.Native.a", true),
+        // Zstandard is part of the runtime pack since .NET 11; it follows its only user in the link order.
+        ("libzstd.a", false),
         ("libSystem.Net.Security.Native.a", true),
-        ("lib{crypto}.a", true),
+        ($"lib{target.CryptographyLibrary}.a", true),
         ("libz.a", false),
         ("libbrotlienc.a", false),
         ("libbrotlidec.a", false),
         ("libbrotlicommon.a", false),
+    ];
+
+    /// <summary>The same for Windows, as listed by the NativeAOT build (Microsoft.NETCore.Native.Windows.targets).</summary>
+    private static (string Name, bool Required)[] WindowsLibraries(OptimizationMode optimization) =>
+    [
+        ("bootstrapper.obj", true),
+        ("Runtime.WorkstationGC.lib", true),
+        ("eventpipe-disabled.lib", true),
+
+        // The vectorized sort of the garbage collector is large, so it is only linked when optimizing for speed.
+        (optimization == OptimizationMode.Speed ? "Runtime.VxsortEnabled.lib" : "Runtime.VxsortDisabled.lib", false),
+        ("standalonegc-disabled.lib", true),
+        ("aotminipal.lib", true),
+        ("zlibstatic.lib", true),
+        ("brotlicommon.lib", true),
+        ("brotlienc.lib", true),
+        ("brotlidec.lib", true),
+        ("zstd_static.lib", false),
+        ("System.Globalization.Native.Aot.lib", true),
+        ("System.IO.Compression.Native.Aot.lib", true),
     ];
 
     public async Task<BuildResult> BuildAsync(BuildOptions options, CancellationToken cancellationToken = default)
@@ -91,10 +116,10 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
         var isMacOS = options.Target.OperatingSystem == TargetOperatingSystem.MacOS;
         if (isMacOS && !options.PositionIndependent)
         {
-            throw new InaException("macOS executables are always position independent. Fixed-address executables are only available for Linux.");
+            throw new InaException("macOS executables are always position independent. Fixed-address executables are only available for Linux and Windows.");
         }
 
-        var outputPath = Path.GetFullPath(options.OutputPath ?? app.Name);
+        var outputPath = Path.GetFullPath(options.OutputPath ?? app.Name + options.Target.ExecutableExtension);
         if (Directory.Exists(outputPath))
         {
             throw new InaException($"The output path {outputPath} is a directory. Choose a file name with --output.");
@@ -116,7 +141,7 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
 
         // 2. IL -> object file
         clock.Restart();
-        var objectPath = Path.Combine(intermediate, app.Name + ".o");
+        var objectPath = Path.Combine(intermediate, app.Name + options.Target.ObjectExtension);
         using (InaTelemetry.ActivitySource.StartActivity("ina.compile"))
         {
             var ilcOptions = new IlcOptions
@@ -127,6 +152,8 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
                 References = CollectReferences(app, packs),
                 Optimization = options.Optimization,
                 RuntimeKnobs = EffectiveKnobs(app, options),
+                RuntimeVersion = packs.RuntimeVersion,
+                DirectPInvokeLists = packs.DirectPInvokeLists,
             };
             logger.LogInformation("Compiling {Assembly} for {Target}", Path.GetFileName(app.Path), options.Target.RuntimeIdentifier);
             await new IlcCompiler(logger).CompileAsync(packs.CompilerPath, ilcOptions, Path.Combine(intermediate, app.Name + ".ilc.rsp"), cancellationToken)
@@ -143,19 +170,29 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
             logger.LogInformation("Linking {Output}", outputPath);
             try
             {
-                // The object format follows from the operating system: Mach-O for macOS, ELF for Linux. Either way
-                // the system libraries are represented by an import table, never by files of the target system.
-                var linkOptions = new LinkOptions
+                // The object format follows from the operating system: PE for Windows, Mach-O for macOS, ELF for
+                // Linux. In every case the system libraries are represented by an import table, never by files of
+                // the target system.
+                IReadOnlyList<LinkInput> inputs = [LinkInput.FromFile(objectPath), .. CollectNativeLibraries(packs, options)];
+                IReadOnlyList<string> exports = [IlcArguments.DiagnosticsSymbol(packs.RuntimeVersion)];
+                if (options.Target.OperatingSystem == TargetOperatingSystem.Windows)
                 {
-                    OutputPath = outputPath,
-                    Architecture = options.Target.Architecture,
-                    Imports = isMacOS ? ImportLibrarySet.ForMacOS(options.Target.Architecture) : ImportLibrarySet.ForGlibc(options.Target.Architecture),
-                    Inputs = [LinkInput.FromFile(objectPath), .. CollectNativeLibraries(packs)],
-                    PositionIndependent = options.PositionIndependent,
-                    EmitSymbolTable = options.EmitSymbolTable,
-                    ExportedSymbols = [IlcArguments.DebugHeaderSymbol],
-                };
-                link = isMacOS ? MachOLinker.Link(linkOptions, logger) : ElfLinker.Link(linkOptions, logger);
+                    link = LinkForWindows(app, options, outputPath, inputs, exports);
+                }
+                else
+                {
+                    var linkOptions = new LinkOptions
+                    {
+                        OutputPath = outputPath,
+                        Architecture = options.Target.Architecture,
+                        Imports = isMacOS ? ImportLibrarySet.ForMacOS(options.Target.Architecture) : ImportLibrarySet.ForGlibc(options.Target.Architecture),
+                        Inputs = inputs,
+                        PositionIndependent = options.PositionIndependent,
+                        EmitSymbolTable = options.EmitSymbolTable,
+                        ExportedSymbols = exports,
+                    };
+                    link = isMacOS ? MachOLinker.Link(linkOptions, logger) : ElfLinker.Link(linkOptions, logger);
+                }
             }
             catch (LinkerException e)
             {
@@ -166,6 +203,32 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
         var linkTime = clock.Elapsed;
         activity?.SetTag("ina.output.size", link.FileSize);
         return new BuildResult(outputPath, link.FileSize, packs.Version, resolveTime, compileTime, linkTime, link);
+    }
+
+    private LinkResult LinkForWindows(
+        AppAssembly app, BuildOptions options, string outputPath, IReadOnlyList<LinkInput> inputs, IReadOnlyList<string> exports)
+    {
+        if (options.EmitSymbolTable)
+        {
+            logger.LogWarning("Windows executables carry no symbol table; --symbols is ignored for this target.");
+        }
+
+        return PeLinker.Link(
+            new PeLinkOptions
+            {
+                OutputPath = outputPath,
+                Architecture = options.Target.Architecture,
+                Imports = ImportLibrarySet.ForWindows(),
+                Inputs = inputs,
+                Subsystem = app.IsWindowsApplication ? PeSubsystem.Windows : PeSubsystem.Console,
+                DynamicBase = options.PositionIndependent,
+                ExportedSymbols = exports,
+
+                // The NativeAOT build passes these on the linker command line; the runtime locates the managed
+                // code by the bounds of its part of the code section.
+                MergedSections = new Dictionary<string, string> { [".managedcode"] = ".text", ["hydrated"] = ".bss" },
+            },
+            logger);
     }
 
     /// <summary>
@@ -192,12 +255,14 @@ public sealed class BuildPipeline(PackageStore packages, ILogger logger)
         return references;
     }
 
-    private static List<LinkInput> CollectNativeLibraries(RuntimePacks packs)
+    private static List<LinkInput> CollectNativeLibraries(RuntimePacks packs, BuildOptions options)
     {
+        var libraries = options.Target.OperatingSystem == TargetOperatingSystem.Windows
+            ? WindowsLibraries(options.Optimization)
+            : UnixLibraries(options.Target);
         var inputs = new List<LinkInput>();
-        foreach (var (pattern, required) in NativeLibraries)
+        foreach (var (name, required) in libraries)
         {
-            var name = pattern.Replace("{crypto}", packs.Target.CryptographyLibrary, StringComparison.Ordinal);
             var path = Path.Combine(packs.NativeDirectory, name);
             if (File.Exists(path))
             {

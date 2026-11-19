@@ -9,17 +9,17 @@ using Microsoft.Extensions.Logging;
 
 var assemblyArgument = new Argument<string>("assembly")
 {
-    Description = "The application to compile: a .NET assembly with an entry point, e.g. bin/Release/net10.0/App.dll",
+    Description = "The application to compile: a .NET assembly with an entry point, e.g. bin/Release/net11.0/App.dll",
 };
 var outputOption = new Option<string?>("--output", "-o")
 {
-    Description = "Path of the executable to write [default: the assembly name in the current directory]",
+    Description = "Path of the executable to write [default: the assembly name in the current directory, with .exe for Windows]",
 };
 var osOption = new Option<string?>("--os")
 {
-    Description = "Target operating system: linux or macos [default: the operating system of this machine if it is one of them, otherwise linux]",
+    Description = "Target operating system: linux, macos or windows [default: the operating system of this machine if it is one of them, otherwise linux]",
 };
-osOption.AcceptOnlyFromAmong("linux", "macos", "osx");
+osOption.AcceptOnlyFromAmong("linux", "macos", "osx", "windows", "win");
 var archOption = new Option<string?>("--arch")
 {
     Description = "Target architecture: x64 or arm64 [default: the architecture of this machine]",
@@ -33,7 +33,7 @@ var optimizeOption = new Option<string>("--optimize", "-O")
 optimizeOption.AcceptOnlyFromAmong("blended", "speed", "size", "none");
 var runtimeVersionOption = new Option<string?>("--runtime-version")
 {
-    Description = "Version of the .NET runtime packs to compile against, e.g. 10.0.3 [default: newest patch of the app's framework]",
+    Description = "Version of the .NET runtime packs to compile against, e.g. 11.0.1 [default: newest patch of the app's framework]",
 };
 var invariantOption = new Option<bool>("--invariant-globalization")
 {
@@ -41,11 +41,11 @@ var invariantOption = new Option<bool>("--invariant-globalization")
 };
 var symbolsOption = new Option<bool>("--symbols")
 {
-    Description = "Keep a symbol table in the executable (useful for debuggers and profilers)",
+    Description = "Keep a symbol table in the executable (useful for debuggers and profilers; not for Windows)",
 };
 var noPieOption = new Option<bool>("--no-pie")
 {
-    Description = "Produce a fixed-address executable instead of a position independent one (Linux only)",
+    Description = "Produce a fixed-address executable instead of one that the system can load at a random address (not for macOS)",
 };
 var intermediateOption = new Option<string?>("--intermediate-dir")
 {

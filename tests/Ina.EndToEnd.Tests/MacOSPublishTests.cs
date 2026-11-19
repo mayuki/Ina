@@ -21,7 +21,7 @@ public class MacOSPublishTests(PublishEnvironment environment)
         Assert.True(publish.ExitCode == 0, publish.Output + publish.Error);
         Assert.Contains("Linked HelloWorld with Ina", publish.Output);
         Assert.Contains(runtimeIdentifier, publish.Output);
-        Assert.Contains("macOS 12.0+", publish.Output);
+        Assert.Contains("macOS 14.0+", publish.Output); // what the runtime packs of .NET 11 are compiled for
 
         // The executable is all there is, as for Linux: no assemblies, no host, and no bundle with debug symbols.
         Assert.Equal(["HelloWorld"], Directory.GetFileSystemEntries(project.PublishDirectory).Select(Path.GetFileName));

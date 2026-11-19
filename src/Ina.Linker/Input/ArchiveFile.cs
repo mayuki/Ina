@@ -5,8 +5,9 @@ using System.Text;
 namespace Ina.Linker.Input;
 
 /// <summary>
-/// A static library in the <c>ar</c> format, in either of its two dialects: System V / GNU (used for ELF) and BSD
-/// (used by Apple's tools for Mach-O). They differ in how long member names and the symbol index are stored.
+/// A static library in the <c>ar</c> format, in any of its dialects: System V / GNU (used for ELF), BSD (used by
+/// Apple's tools for Mach-O) and the one of the Microsoft librarian (used for COFF). They differ in how long member
+/// names and the symbol index are stored.
 /// </summary>
 internal sealed class ArchiveFile
 {
@@ -107,8 +108,13 @@ internal sealed class ArchiveFile
             var (name, body, size) = ReadMember(offset);
             if (name == "/")
             {
-                ReadGnuSymbolTable(body.Span, wide: false);
-                hasSymbolTable = true;
+                // Microsoft libraries have a second index of the same name in a different layout; the first one
+                // has the format that all tools share.
+                if (!hasSymbolTable)
+                {
+                    ReadGnuSymbolTable(body.Span, wide: false);
+                    hasSymbolTable = true;
+                }
             }
             else if (name == "/SYM64/")
             {
@@ -267,13 +273,14 @@ internal sealed class ArchiveFile
         }
         else if (rawName.Length > 1 && rawName[0] == '/' && char.IsAsciiDigit(rawName[1]))
         {
-            // GNU: "/<offset>" refers to the long name table, where names end with "/\n".
+            // GNU and Microsoft: "/<offset>" refers to the long name table, where names end with "/\n" (GNU) or
+            // a NUL (Microsoft).
             var nameOffset = int.Parse(rawName.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture);
             var longNames = _longNames.Span;
             if (nameOffset < longNames.Length)
             {
                 var rest = longNames[nameOffset..];
-                var end = rest.IndexOf((byte)'\n');
+                var end = rest.IndexOfAny((byte)'\n', (byte)0);
                 name = Encoding.UTF8.GetString(end < 0 ? rest : rest[..end]).TrimEnd('/');
             }
         }

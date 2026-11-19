@@ -3,6 +3,7 @@ Projects live in `src` and `tests` under the repository root.
 
 - repository root
 	- .gitignore
+	- .github (continuous integration)
 	- Ina.slnx
 	- global.json
 	- Directory.Build.props / Directory.Packages.props
@@ -14,7 +15,7 @@ Projects live in `src` and `tests` under the repository root.
 		- Ina (the `ina` command line tool)
 		- Ina.Sdk (the integration into `dotnet publish`: MSBuild project SDK, package and link task)
 		- Ina.Core (the build pipeline of the command: packs, ILCompiler driver, link step)
-		- Ina.Linker (the managed linkers: ELF for Linux, Mach-O for macOS, and the import tables)
+		- Ina.Linker (the managed linkers: ELF for Linux, Mach-O for macOS, PE for Windows, and the import tables)
 	- tests
 		- Ina.Linker.Tests
 		- Ina.Core.Tests

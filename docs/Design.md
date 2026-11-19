@@ -14,9 +14,10 @@ Goals of the proof of concept:
 
 - Compile console applications that consist of several assemblies and use the real
   base class library (console, files, `System.Text.Json`, ...).
-- Produce Linux and macOS executables. Windows is desirable later.
+- Produce Linux, macOS and Windows executables, for x64 and arm64.
 - Do not invoke or require a compiler, assembler, linker, SDK or sysroot of the target.
-  In particular, building for macOS must not require a Mac.
+  In particular, building a Windows executable must not require Windows, and building for
+  macOS must not require a Mac.
 
 Explicitly out of scope for now: optimizing beyond what the borrowed compiler does,
 debuggability of the output, and breadth of platform coverage.
@@ -26,8 +27,10 @@ debuggability of the output, and breadth of platform coverage.
 ### 2.1 Where the native toolchain dependency actually is
 
 NativeAOT already compiles IL to machine code without a C compiler: ILCompiler drives
-RyuJIT and writes object files with its own object writer. What needs a toolchain is
-the last step, which calls `clang` (as a linker driver) to combine
+RyuJIT and writes object files with its own object writer, for any target on any host.
+What needs a toolchain is the last step.
+
+On Linux it calls `clang` (as a linker driver) to combine
 
 - the object file of the application,
 - the static libraries of the runtime (`libRuntime.WorkstationGC.a`, `libSystem.Native.a`, ...),
@@ -35,8 +38,18 @@ the last step, which calls `clang` (as a linker driver) to combine
 - the static part of the C library (`libc_nonshared.a`) and the compiler support library,
 - the shared C library of the *target* system, to resolve symbols and symbol versions.
 
-The last three are why cross compilation needs a sysroot, and the linker is why it needs
-a toolchain. Ina therefore keeps ILCompiler and replaces the link step with its own linker.
+On Windows it calls `link.exe` of Visual C++ to combine
+
+- the object file of the application and the static libraries of the runtime
+  (`Runtime.WorkstationGC.lib`, `aotminipal.lib`, ...),
+- the import libraries of the Windows SDK (`kernel32.lib`, `advapi32.lib`, ..., `ucrt.lib`),
+- the static C runtime of Visual C++ (`libcmt.lib`, `libvcruntime.lib`): the startup code,
+  the stack probe, the stack protection, the support for thread-local storage, `memcpy`
+  and friends.
+
+The system libraries are why cross compilation needs a sysroot or an SDK, and the linker
+is why it needs a toolchain. Ina therefore keeps ILCompiler and replaces the link step
+with its own linkers.
 
 For macOS the picture is the same with different names: the link step calls `clang`, which
 runs Apple's `ld` with the stubs of the system libraries from the macOS SDK (`.tbd` files),
@@ -50,7 +63,7 @@ for macOS, so with the standard tools a macOS executable can only be built on a 
 | Own IL compiler, own runtime, own core library | NetWasm | Reaches independence from everything, but running the real BCL (`System.Text.Json`, the console) requires reimplementing most of ILCompiler and the runtime. Far beyond a proof of concept. |
 | Translate IL to C++ and compile that | IL2CPP, dn2cpp | Requires a C++ toolchain per target, which is exactly what must be avoided. |
 | NativeAOT plus a bundled native linker and sysroot | bflat | Works and cross compiles, but ships `lld` and target libraries as native binaries per host. Ina wants the linking logic to be managed code and the target description to be data. |
-| **ILCompiler for code, own managed linker** | **Ina** | Reuses the production compiler and runtime, and owns precisely the part that caused the dependency. |
+| **ILCompiler for code, own managed linkers** | **Ina** | Reuses the production compiler and runtime, and owns precisely the part that caused the dependency. |
 
 The trade-off of the chosen approach: Ina depends on the ILCompiler package for the host
 (a native executable published for every host .NET supports) and on the precompiled
@@ -59,28 +72,31 @@ runtime libraries of the target. Both are ordinary NuGet packages that Ina downl
 ### 2.3 Pipeline
 
 ```
-ina App.dll --os linux --arch arm64
+ina App.dll --os linux --arch arm64                 ina App.dll --os windows --arch x64
  │
- ├─ AppAssembly        reads the assembly: entry point, target framework, runtimeconfig.json
+ ├─ AppAssembly        reads the assembly: entry point, target framework, runtimeconfig.json, subsystem
  ├─ RuntimePacks       runtime.<host>.Microsoft.DotNet.ILCompiler            -> tools/ilc
  │                     Microsoft.NETCore.App.Runtime.NativeAOT.<target>      -> framework IL + static libraries
- ├─ IlcCompiler        ilc @App.ilc.rsp                                      -> App.o
- └─ ElfLinker          App.o + runtime libraries + import table              -> App     (Linux)
-    MachOLinker                                                                         (macOS)
+ │                     Microsoft.DotNet.ILCompiler (Windows targets only)    -> list of directly callable Windows APIs
+ ├─ IlcCompiler        ilc @App.ilc.rsp                                      -> App.o / App.obj
+ └─ ElfLinker          App.o + runtime libraries + import table              -> App       (Linux)
+    MachOLinker        App.o + runtime libraries + import table              -> App       (macOS)
+    PeLinker           App.obj + runtime libraries + import table            -> App.exe   (Windows)
 ```
 
 `src/Ina.Core` implements the first three steps and `src/Ina.Linker` the last one.
 `src/Ina` is the command line front end.
 
 This is the pipeline of the `ina` command, which starts from an assembly. The integration
-into `dotnet publish` (section 5) starts from a project: there the .NET SDK resolves the
+into `dotnet publish` (section 6) starts from a project: there the .NET SDK resolves the
 packs and runs the compiler, and only the last step is Ina's.
 
 **Targets.** A target is an operating system and an architecture (`TargetPlatform`). The
-operating system decides the runtime identifier of the packs (`linux-x64`, `osx-arm64`),
-what ILCompiler is told (`--targetos`), which native library implements cryptography
-(OpenSSL on Linux, Apple's frameworks on macOS) and which linker is used. Without `--os`
-the target is the operating system of the host if Ina can target it, and Linux otherwise.
+operating system decides the runtime identifier of the packs (`linux-x64`, `osx-arm64`,
+`win-x64`), what ILCompiler is told (`--targetos`), which native library implements
+cryptography (OpenSSL on Linux, Apple's frameworks on macOS; on Windows managed code calls
+the system directly) and which linker is used. Without `--os` the target is the operating
+system of the host if Ina can target it, and Linux otherwise.
 
 **Packs.** The version is the newest patch release of the application's framework
 (major.minor from `runtimeconfig.json`, or `TargetFrameworkAttribute`), preferring a
@@ -98,9 +114,22 @@ switches that `PublishAot` sets by default are applied, and the `configPropertie
 application's `runtimeconfig.json` override them. The compiler runs as a child process
 because the package ships it as a native executable.
 
-**Linking.** See the next two sections: one linker per object format.
+The command line depends on two things besides the application:
 
-## 3. The ELF linker
+- *The version of the compiler*, which is the version of the packs. .NET 11 renamed the
+  symbol through which diagnostic tools find the runtime (`DotNetRuntimeContractDescriptor`
+  instead of `DotNetRuntimeDebugHeader`) and gave `--stacktracedata` a value.
+- *The target system.* For Windows the compiler gets the list of Windows APIs that exist
+  on every supported version (`WindowsAPIs.txt` of the ILCompiler package); P/Invokes
+  into them become direct references that the linker binds, everything else is looked up
+  at run time. The Win32 resources of the application (version information, icon,
+  manifest) are copied into the object file, and data is not stored in the compact
+  "dehydrated" form unless the build optimizes for size. This is what the official build
+  does as well.
+
+**Linking.** See the next three sections: one linker per object format.
+
+## 3. The ELF linker (Linux)
 
 `ElfLinker` links ELF relocatable objects and static libraries into a dynamically linked
 executable for x86-64 or AArch64. It is not a general purpose replacement for `ld`; it
@@ -118,7 +147,10 @@ The passes are the methods called by `LinkSession.Run`, in this order:
    Sections that are not loaded at run time (debug information, comments) are dropped.
 3. **Resolve symbols.** Strong definitions override weak ones and tentative (common)
    ones; two strong definitions are an error. Archive members are loaded only when they
-   define a symbol that is still undefined, repeatedly until nothing changes.
+   define a symbol that is still undefined, repeatedly until nothing changes. Exported
+   symbols count as references here, like `-u symbol` of other linkers: since .NET 11
+   the descriptor for diagnostic tools lives in a member of the runtime library that no
+   code refers to.
 4. **C library stubs.** Functions that the shared C library does not export are added
    for names that are still undefined (see 3.3).
 5. **Linker-defined symbols.** `__init_array_start`, `_GLOBAL_OFFSET_TABLE_`,
@@ -170,7 +202,8 @@ this being right, which is what the `RuntimeTour` sample exercises.
 `src/Ina.Linker/Abi/Tables/glibc-<arch>.abi` describe the shared libraries of the target
 as text: for each library and symbol version, the exported functions, data objects and
 thread-local variables. They are generated by `eng/generate-abi.sh` from the `libc6`
-package of Ubuntu 18.04 (glibc 2.27), the oldest C library that .NET 10 supports.
+package of Ubuntu 18.04 (glibc 2.27), the C library baseline of .NET 10. The runtime
+libraries of .NET 11 link against the same baseline.
 
 Consequences:
 
@@ -206,19 +239,7 @@ from the thread pointer. The linker uses this in two ways:
 Local-dynamic offsets are relative to the result of the rewritten call, so on x86-64 the
 rewrite happens only if every local-dynamic call site in the image is canonical.
 
-### 3.6 Adding a target
-
-An architecture is a subclass of `TargetArch`: relocation scan and application, the PLT
-stub, the entry point and C library stubs as machine code, and the thread pointer offset
-formula. A C library is an import table. The runtime identifier of a new target is added
-to `TargetPlatform` for the command, and to `SupportedTargets` and
-`Ina.Sdk.AfterMicrosoftNETSdk.targets` for `dotnet publish`. Another object format is a
-second linker, which is what section 4 describes for Mach-O: the passes are the same in
-spirit, but the unit of linking, the relocation model, what the loader expects and what
-the toolchain contributes differ too much to share more than the inputs and outputs of a
-link.
-
-## 4. The Mach-O linker
+## 4. The Mach-O linker (macOS)
 
 `MachOLinker` (`src/Ina.Linker/MachO`) links Mach-O relocatable objects and static
 libraries into an executable for macOS on x86-64 or AArch64. Like the ELF linker it
@@ -333,7 +354,11 @@ name, its versions and the symbols it exports. They are generated by
 - **Frameworks and Swift libraries are listed as far as the native libraries of the .NET
   runtime packs refer to them.** Foundation alone exports tens of thousands of symbols.
   The price is that the tables have to be regenerated when a new .NET version uses more
-  of them; the linker then reports the missing symbols by name.
+  of them; the linker then reports the missing symbols by name. That happened with
+  .NET 11, whose packs refer to 165 symbols that those of .NET 10 do not: 83 of CryptoKit,
+  71 of the Swift standard library and the Swift part of Foundation, nine functions of
+  Network.framework and two of Security.framework. The tables are generated from the
+  first and the newest release of every supported runtime.
 - **A symbol is attributed to the library that has it on the oldest supported system.**
   Apple moves code between libraries and records the former home in the stubs
   (`$ld$previous`). The Swift part of Foundation was `libswiftFoundation.dylib` up to
@@ -382,7 +407,153 @@ has executed.
 An architecture is a subclass of `MachTarget`: decoding relocation entries, patching
 instructions, the stub, and the generated functions as machine code.
 
-## 5. Integration into `dotnet publish`
+## 5. The PE linker (Windows)
+
+`PeLinker` links COFF objects and static libraries into a PE32+ executable for x64 or
+ARM64. It lives next to the other two linkers in `src/Ina.Linker` (namespace
+`Ina.Linker.Pe`) and shares the archive reader, the import table format and the result
+type with them; the object model and the passes are its own, because the formats resolve
+symbols and lay out images differently. Like the other linkers it implements what a
+NativeAOT link needs and reports the rest as an error.
+
+### 5.1 Passes
+
+The passes are the methods called by `PeLinkSession.Run`:
+
+1. **Load inputs.** Objects are parsed (`CoffObject`, regular and "bigobj" flavor);
+   libraries are indexed through their first linker member, which has the format of the
+   GNU archive index. Debug information (`.debug$*`) and the tables for Control Flow Guard
+   are dropped. The linker options that objects embed (`.drectve`) are applied:
+   `/merge`, `/alternatename`, `/include` and `/export`; requests for default libraries
+   and consistency checks between objects are ignored.
+2. **Roots.** The entry point and the exported symbols are referenced; `__ImageBase` is
+   defined.
+3. **Resolve symbols**, until nothing changes: from libraries; then from the *runtime
+   support* that the linker generates (5.3); then through alternate names. COMDAT
+   sections are selected while objects are added: the first section with a given COMDAT
+   symbol wins (or the largest one, if the selection says so), and sections that are
+   *associated* with a dropped section - the unwind data of a function - go with it.
+   A weak external resolves to its default unless something defines it.
+4. **Common symbols** get zero-initialized storage.
+5. **Bind imports.** A symbol that is still undefined becomes an import if the import
+   table knows it (5.4): `__imp_X` is the slot of the import address table that holds
+   the address of X, a plain `X` is a function that is called through a thunk.
+6. **Garbage collection.** As with the Microsoft linker, ordinary sections are always
+   kept and COMDAT sections - which is what compilers emit per function - only when
+   something refers to them. Associated sections follow their section.
+7. **Relocation scan.** Reports undefined symbols and determines which imports are used.
+8. **Import and export tables** are generated for what is used.
+9. **Layout.** Chunks are grouped into sections by the part of their name before `$`
+   and ordered by the full name, which is how the tables of the runtime line up between
+   their start and end markers (`.managedcode$A`, `$I`, `$Z`; `.CRT$XCA`, `$XCU`, `$XCZ`).
+   Sections are merged as requested (`.managedcode` and `.unbox` into `.text`, `.modules`
+   into `.rdata`, `hydrated` into `.bss`) and as every Windows linker does (`.xdata`,
+   `.CRT`, `.idata`, `.edata` into `.rdata`; `.bss` into `.data`, at its end so that it
+   takes no room in the file). The result is `.text`, `.rdata`, `.data`, `.tls`,
+   `.pdata`, `.rsrc`, `.reloc`.
+10. **Base relocations.** Every 64-bit absolute address is listed in `.reloc`, the last
+    section, so that Windows can load the image at a random address. `--no-pie` produces
+    an image without them that is bound to its preferred address.
+11. **Write.** Chunks are copied and relocations applied; the function table is sorted;
+    headers and data directories are written. The time stamp of the header is derived
+    from the content, which keeps the output reproducible.
+
+### 5.2 Function table and unwinding
+
+Windows describes every non-leaf function with an entry in the function table (`.pdata`)
+that points to its unwind information (`.xdata`). The operating system looks entries up
+with a binary search, and so does the .NET runtime, which finds the exception handling
+and GC information of a managed method behind its unwind information. The linker
+therefore concatenates the `.pdata` contributions, applies the relocations, and sorts the
+entries by address (12 bytes each on x64, 8 on ARM64). Entries of functions that were
+dropped disappear with them because their `.pdata` and `.xdata` sections are associated
+with the function.
+
+### 5.3 Replacing the pieces of the toolchain
+
+The runtime libraries are compiled for the static C runtime of Visual C++ in combination
+with the Universal C Runtime DLL. The DLL is part of Windows; the static part is not
+available without Visual C++, so the linker generates what the runtime needs from it.
+Each piece is an object that takes part in the link only when one of its symbols is
+referenced, exactly like a member of `libcmt.lib`.
+
+| A native link takes this ... | ... from | Ina |
+|---|---|---|
+| `wmainCRTStartup` | `libcmt.lib` | Generated machine code: tells the C runtime DLL what kind of program this is, lets it parse the command line, runs the C and C++ initializers (`_initterm_e`, `_initterm`), runs the dynamic initializers of thread-locals for the main thread, calls `wmain` and passes its result to `exit`. |
+| Initializer tables (`__xi_a` ... `__xc_z`) | `libcmt.lib` | Marker sections `.CRT$XIA` ... `.CRT$XCZ`; compilers put their entries in between. |
+| TLS directory (`_tls_used`), `_tls_index` | `libcmt.lib` | Generated data, see 5.5. |
+| `__dyn_tls_init`, `__dyn_tls_on_demand_init`, `__tls_guard` | `libcmt.lib` | Generated code that runs the functions between `.CRT$XDA` and `.CRT$XDZ` once per thread, registered as a TLS callback. |
+| `__chkstk` | `libcmt.lib` | Generated stack probe: touches every page of a large frame from the top down. |
+| `__security_cookie`, `__security_check_cookie` (x64), `__security_push_cookie` / `__security_pop_cookie` (ARM64), `__report_rangecheckfailure` | `libcmt.lib` | Generated. The cookie has the documented initial value, and a generated load configuration directory points at it, so Windows replaces it with a random value when it loads the image. A mismatch ends the program with `__fastfail`. |
+| `__GSHandlerCheck` | `libcmt.lib` | Generated, but simplified: it lets the unwind continue without validating the cookie of the frame. The cookie is still checked when the function returns. |
+| `__guard_check_icall_fptr`, `__guard_dispatch_icall_fptr` | `libcmt.lib` | Pointers to stubs that accept every call target, which is what an image without Control Flow Guard gets from the Microsoft linker too. |
+| `_InterlockedCompareExchange` and friends (ARM64) | `libvcruntime.lib` | Generated load-exclusive/store-exclusive loops. The compiler does not expand these inline for ARM64. |
+| `atexit`, `operator new`/`delete`, POSIX names like `open` | `libcmt.lib`, `oldnames.lib` | Aliases to functions of the C runtime DLL: `_crt_atexit`, `malloc`/`free`, `_open`. |
+| `memcpy`, `memset`, `__C_specific_handler`, `_purecall`, ... | `libvcruntime.lib` | Imported from the Universal C Runtime, which exports them too. |
+| `_fltused`, `__ImageBase` | `libcmt.lib`, the linker | An absolute symbol; a linker-defined symbol. |
+| Win32 functions | Import libraries of the Windows SDK | The import table (5.4). |
+
+The machine code is written as bytes with the assembly next to it (`PeX64Target`,
+`PeArm64Target`). Functions with a stack frame carry unwind information, so that a stack
+walk through them works.
+
+### 5.4 Import table
+
+`src/Ina.Linker/Abi/Tables/windows.abi` lists, for each system DLL that a NativeAOT
+program links against, the names it exports. It is generated by
+`eng/GenerateWindowsAbi.cs` from the export tables of the DLLs of a Windows installation;
+no SDK is involved. The same table serves both architectures.
+
+- The DLLs are those of the official link line (`advapi32`, `bcrypt`, `crypt32`,
+  `iphlpapi`, `kernel32`, `mswsock`, `ncrypt`, `normaliz`, `ole32`, `oleaut32`, `secur32`,
+  `user32`, `version`, `ws2_32`, the wait-on-address API set) in that order, which decides
+  where a name that several DLLs export is bound.
+- The Universal C Runtime is addressed through its API sets
+  (`api-ms-win-crt-runtime-l1-1-0.dll`, ...), like official binaries do. Which function
+  belongs to which API set is read from the stub DLLs that Windows ships for them.
+- `ntdll.dll` contributes its native API only (`Nt*`, `Rtl*`, ...). It also exports a
+  private copy of many C functions; binding `atexit` or `memcpy` to those would be wrong.
+  For the same reason the compiler support functions that `kernel32.dll` forwards to
+  `ntdll.dll` are left out.
+
+Windows binds imports by name without versions, so unlike with glibc there is nothing to
+pin: a function that the runtime references exists on every Windows it supports. The
+import directory lists a DLL only when something is imported from it, and the image
+depends on nothing that is not part of Windows 10: neither the Visual C++ redistributable
+nor an SDK component.
+
+Imports are bound eagerly by the loader through the import address table, which lives in
+`.rdata`. Direct calls go through thunks of 8 bytes (x64: `jmp [slot]`) or 16 bytes
+(ARM64: `adrp`/`ldr`/`br`).
+
+### 5.5 Thread-local storage
+
+Windows allocates a copy of the *TLS template* of every module for each thread and finds
+it through the TLS directory of the image. Thread-local variables live in `.tls$`
+sections; the generated runtime support contributes the markers `.tls` and `.tls$ZZZ`
+that enclose them, the directory with the bounds, the slot `_tls_index` that receives the
+index of the module, and the callback list. Compiled code - the runtime as well as the
+managed code for thread statics - addresses a variable by its offset from the start of
+the template (`SECREL` relocations), which is why `.tls` stays a section of its own. The
+linker records the strictest alignment of the template in the directory, so that the
+per-thread copies are aligned like the image.
+
+### 5.6 Not implemented
+
+- **Program database.** CodeView debug information is dropped; there is no PDB, and the
+  image has no debug directory.
+- **Control Flow Guard and CET.** The guard tables are dropped and the image is not
+  marked as compatible with shadow stacks. NativeAOT supports both configurations
+  (`ControlFlowGuard`, `CETCompat=false`); the executables simply run without these
+  mitigations.
+- **Identical code folding** (`/OPT:ICF`). The executables are nevertheless slightly
+  smaller than those of the official build, because less of the static C runtime is
+  linked.
+- **Import libraries and DLLs as output.** Members of import libraries are rejected with
+  an explanation; only executables are produced.
+- **Symbol table.** `--symbols` has no effect for Windows targets.
+
+## 6. Integration into `dotnet publish`
 
 `src/Ina.Sdk` makes `dotnet publish` produce the executable with Ina. A project opts in
 with `PublishIna`:
@@ -396,7 +567,7 @@ with `PublishIna`:
 </Project>
 ```
 
-### 5.1 Approach: NativeAOT up to the link
+### 6.1 Approach: NativeAOT up to the link
 
 `PublishIna` is `PublishAot` with a different last step. The .NET SDK does everything it
 does for NativeAOT: it restores ILCompiler and the runtime pack with NuGet, enables the
@@ -418,9 +589,9 @@ Alternatives that were considered:
 | Run the pipeline of the `ina` command (`Ina.Core`) from a target after the build | It would be independent of the NativeAOT targets, and a package reference would suffice. But the settings of the project would have to be translated into compiler arguments a second time, and so would the publish steps: the .NET SDK treats `PublishAot` specially when it decides what goes into the publish directory (no host, no assemblies, no `deps.json`). Both copies would drift from the original. |
 | Leave the NativeAOT targets alone and hand them Ina as their linker (`CppCompilerAndLinker`) | No target would have to be replaced. But Ina would have to understand the command line of clang as these targets happen to produce it, it would need a launcher script per host operating system to be started as a program, and the targets would still look for `objcopy`. |
 | Run before `LinkNative` and leave an up-to-date output behind, so that the original target is skipped | It needs no import after the NativeAOT targets, but it relies on time stamps to keep a target from running, and the target that selects the libraries would still fail without a toolchain. |
-| **Redefine the targets that need a toolchain, after the NativeAOT targets** | Chosen. The dependency on the internals of those targets is explicit and small (5.3). |
+| **Redefine the targets that need a toolchain, after the NativeAOT targets** | Chosen. The dependency on the internals of those targets is explicit and small (6.3). |
 
-### 5.2 Project SDK or package reference
+### 6.2 Project SDK or package reference
 
 The integration has to act at two points of the evaluation of a project, and neither is
 where a package or a project SDK is imported by default:
@@ -466,7 +637,7 @@ for projects that manage everything through package references.
 `PublishIna` accepts `true` and, like `Nullable`, `enable`. The switch is normalized
 into a private property because a value given on the command line cannot be rewritten.
 
-### 5.3 What is replaced
+### 6.3 What is replaced
 
 `Ina.Sdk.NativeLink.targets` is imported when `PublishIna` is on and the NativeAOT targets
 are present. It redefines two targets of `Microsoft.NETCore.Native.Unix.targets` and
@@ -505,7 +676,7 @@ what differs between them is left in these targets:
   and signs a macOS executable (4.8). There is no `.dbg` file and no `.dSYM` bundle, as there
   is no debug information.
 - A macOS executable is always position independent, so `PositionIndependentExecutable=false`
-  is rejected for these targets (5.4).
+  is rejected for these targets (6.4).
 
 **Incremental builds.** MSBuild skips a target whose outputs are newer than its inputs,
 and the options of a link are not files. The target `_InaWriteLinkOptions` writes them
@@ -523,7 +694,7 @@ can add a runtime library that then has to be added to the list here as well (th
 command has a list of its own in `BuildPipeline`). The publish tests run against the
 installed .NET SDK, so such a change shows up as a failing test.
 
-### 5.4 Checks
+### 6.4 Checks
 
 The target `_InaValidatePublish` rejects what Ina cannot do with an explanation, instead
 of letting the publish fail somewhere in the middle. It runs before the publish steps,
@@ -542,7 +713,7 @@ not imported; there the check only runs before the publish steps.)
 | INA2001 | task | The link failed, e.g. because of an undefined symbol |
 | INA2002 | task | An input of the link cannot be read |
 
-### 5.5 The two front ends
+### 6.5 The two front ends
 
 | | `ina App.dll` | `dotnet publish` with `PublishIna` |
 |---|---|---|
@@ -552,8 +723,28 @@ not imported; there the check only runs before the publish steps.)
 | Settings | Options of the command | MSBuild properties of NativeAOT |
 | Shared frameworks, satellite assemblies, static libraries | No | Yes |
 | Runs with | The .NET runtime, or stand-alone when `ina` is compiled with itself | The .NET SDK |
+| Targets | Linux, macOS and Windows | Linux and macOS; a Windows runtime identifier is rejected (INA1002) until the Windows flavor of the NativeAOT targets is replaced as well |
 
-## 6. Observability
+## 7. Adding a target
+
+For the ELF linker an architecture is a subclass of `TargetArch`: relocation scan and
+application, the PLT stub, the entry point and C library stubs as machine code, and the
+thread pointer offset formula. A C library is an import table.
+
+For the Mach-O linker an architecture is a subclass of `MachTarget` (4.9).
+
+For the PE linker an architecture is a subclass of `PeTarget`: relocation application,
+the import thunk, the format of the unwind data, and the runtime support as machine code.
+
+The runtime identifier of a new target is added to `TargetPlatform` for the command, and
+to `SupportedTargets` and `Ina.Sdk.AfterMicrosoftNETSdk.targets` for `dotnet publish`.
+
+Another object format is another linker. The passes are the same in spirit, but as the
+three existing linkers show, the unit of linking, the relocation model, what the loader
+expects and what the toolchain contributes differ too much to share more than the inputs
+and outputs of a link, the archive reader and the import tables.
+
+## 8. Observability
 
 - Every phase of the pipeline is an `Activity` of the `ActivitySource` named `Ina`
   (`ina.build`, `ina.resolve-packs`, `ina.download-package`, `ina.compile`, `ina.link`).
@@ -561,7 +752,7 @@ not imported; there the check only runs before the publish steps.)
   (OpenTelemetry, `dotnet-trace`) can do the same.
 - Progress, warnings from the compiler and diagnostics go through `ILogger`. The command
   line maps them to plain progress lines, `warning:` and `error:` prefixes.
-- The linker returns a `LinkResult` with counts, the dependencies and what the executable
+- Every linker returns a `LinkResult` with counts, the dependencies and what the executable
   requires of the system: symbol versions for ELF, from which the minimum C library version
   is derived, and the minimum version of macOS for Mach-O. The summary line shows that
   requirement.
@@ -571,17 +762,24 @@ not imported; there the check only runs before the publish steps.)
   record the duration of the task. `obj/.../native/<App>.ina.rsp` lists the inputs and
   options of the last link.
 
-## 7. Testing
+## 9. Testing
 
 | Project | What it checks |
 |---|---|
-| `Ina.Linker.Tests` | Links small programs that are assembled in memory by `ElfObjectBuilder` and `MachObjectBuilder` and runs them: imports, GOT and stubs, constructors, thread-local variables, archives, weak and common symbols, COMDAT, garbage collection and dead stripping, unwind tables, image layout. The images are also read back the way a loader does (`ElfImage`, `MachOImage`: load commands, fixup programs, export trie, unwind table, code signature), and relocations are checked by decoding the patched instructions, so that everything but the execution is tested on every host. For macOS the system unwinder walks a real stack through frames described by compact encodings and by DWARF. |
-| `Ina.Core.Tests` | Targets, ILCompiler arguments, application inspection, pack selection and download against an in-memory package feed. |
-| `Ina.Sdk.Tests` | The link task with a recording build engine: linking objects that are assembled in memory for both object formats, the options, the exports file in its two forms, and the errors it reports. |
-| `Ina.EndToEnd.Tests` | Compiles the samples with the full pipeline for Linux and macOS, runs them where the host can and compares the output with the regular .NET runtime executing the same assembly; drives the `ina` command. Also compiles `ina` itself and uses the native tool to build an application. The publish tests copy a sample, add Ina to its project file the way a user would, and run `dotnet publish` for Linux and for macOS. |
+| `Ina.Linker.Tests` | Links small programs that are assembled in memory and runs them. **ELF** (`ElfObjectBuilder`): imports, GOT/PLT, constructors, TLS models, archives, weak and common symbols, COMDAT, garbage collection, unwind tables, image layout. **Mach-O** (`MachObjectBuilder`): imports, GOT and stubs, constructors, thread-local variables, archives, weak and common symbols, dead stripping, unwind tables, image layout; the system unwinder walks a real stack through frames described by compact encodings and by DWARF. **PE** (`CoffObjectBuilder`): imports through thunks and address slots, initializers, base relocations, TLS, the stack probe and the stack protection, libraries, COMDAT selection, weak externals and alternate names, section ordering and merging, the function table, exports, resources. The images are also read back the way a loader does (`ElfImage`, `MachOImage`: load commands, fixup programs, export trie, unwind table, code signature; `PeImage`), and relocations are checked by decoding the patched instructions, so that everything but the execution is tested on every host. The ARM64 versions of the runtime support that the PE linker generates are executed by `Arm64Emulator`, a small interpreter for the instructions the linker generates, which runs the linked image and stands in for the C runtime DLL. |
+| `Ina.Core.Tests` | Targets, ILCompiler arguments per target and compiler version, application inspection, pack selection and download against an in-memory package feed. |
+| `Ina.Sdk.Tests` | The link task with a recording build engine: linking objects that are assembled in memory for both object formats it supports, the options, the exports file in its two forms, and the errors it reports. |
+| `Ina.EndToEnd.Tests` | Compiles the samples with the full pipeline for Linux, macOS and Windows, runs them where the host can and compares the output with the regular .NET runtime executing the same assembly; drives the `ina` command. Also compiles `ina` itself and uses the native tool to build an application. The publish tests copy a sample, add Ina to its project file the way a user would, and run `dotnet publish` for Linux and for macOS. |
 
 The test suite does not use a native toolchain. Machine code in tests is written as bytes
 with the assembly as comments.
+
+Tests run the executables they can: Linux executables on Linux (the linker tests also on
+Windows through WSL), arm64 Linux executables natively or under `qemu-aarch64`, macOS
+executables on a Mac of the same architecture (x64 ones also on Apple silicon with
+Rosetta), x64 Windows executables on x64 Windows, ARM64 Windows executables on Windows on
+ARM64. Everything else is skipped, while the tests that inspect the structure of an image
+run on every host.
 
 The publish tests exercise the package, not the files in the source tree: the build of the
 test project packs `Ina.Sdk` into a feed next to the test assembly, under a version label
@@ -594,31 +792,66 @@ switched off for these commands: the samples treat warnings as errors, and an ad
 the compiler package of the installed .NET SDK would fail every publish for a reason that
 has nothing to do with Ina.
 
-## 8. Verification
+The continuous integration (`.github/workflows/ci.yml`) runs the suite on hosted Linux and
+Windows machines, where between them every kind of executable except those for macOS can
+be run, and adds a check across machines: the samples are built for Windows on Linux, run
+on Windows, and compared with a build of the same assemblies on Windows.
+
+## 10. Verification
 
 What has been verified, and how:
 
-- `linux-x64`: all samples run natively on the development machine (Ubuntu 24.04, glibc 2.39)
-  and behave identically to the regular runtime.
-- `linux-arm64`: cross compiled on x64 and run under `qemu-aarch64` with the glibc 2.39
-  of Ubuntu's cross packages.
-- Self-hosting: `ina` compiled by itself builds the samples (also for arm64), and compiling
-  itself again with the native tool produces a byte-identical executable.
-- Symbol versions: the samples require at most `GLIBC_2.17` on both architectures, and a
+- `linux-x64`: all samples run natively and behave identically to the regular runtime
+  (Ubuntu 24.04 with glibc 2.39, .NET 10 packs). With the .NET 11 packs they were built on
+  Windows and run on Ubuntu 26.04 (glibc 2.43) under WSL, where they pass their checks.
+- `linux-arm64`: cross compiled on x64 and run under `qemu-aarch64` with the C library of
+  Ubuntu's cross packages: glibc 2.39 with the .NET 10 packs, and glibc 2.43 with the
+  .NET 11 packs, the latter by the continuous integration.
+- `win-x64`: all samples run on Windows 11 and behave identically to the regular runtime,
+  in every optimization mode and as a fixed-address image. The imports of `HelloWorld`
+  were compared with those of the official NativeAOT build: identical except for the
+  startup internals of the static C runtime on one side and `memcpy`, `memmove`,
+  `memset`, `_purecall` and `__C_specific_handler` (imported instead of linked
+  statically) on the other.
+- Building for Windows on Linux: the complete test suite passes on Linux from a clean
+  checkout of the repository, which includes linking the samples for `win-x64` and
+  `win-arm64`. The samples built there for `win-x64` - by the managed tool, and by the
+  Linux-native `ina` without any .NET installation - run on Windows and behave like the
+  regular runtime. Given the same IL assemblies, the executables for both architectures
+  are byte-identical to those built on Windows. The Linux system was Ubuntu 26.04 with
+  neither a compiler nor Wine nor anything of the Windows SDK; the checkout, the .NET SDK
+  and all caches were on its own file system, and the environment of the build had no
+  access to Windows programs. That system was a virtual machine on the Windows development
+  machine (WSL 2), so the continuous integration repeats the check on machines that have
+  nothing to do with each other: a hosted Ubuntu 26.04 machine builds `HelloWorld` and
+  `RuntimeTour` for `win-x64` and `win-arm64`; a hosted Windows Server 2025 machine runs
+  the `win-x64` executables and finds all four byte-identical to its own build of the
+  same assemblies. The test suite passes on both machines; each skips only the tests that
+  run executables of a system it is not.
+- Self-hosting: `ina` compiled by itself builds the samples, for Linux and for Windows,
+  and compiling itself again with the native tool produces a byte-identical executable
+  on both systems. The native tools also download and unpack the packs themselves, which
+  exercises sockets, TLS and compression in the produced executables.
+- Symbol versions: the samples require at most `GLIBC_2.25` on both architectures, and a
   test checks that nothing newer than the 2.27 baseline is ever required.
-- `dotnet publish` (.NET SDK 10.0.404, `linux-x64` host), by tests: as a project SDK and
+- .NET 10 applications are compiled with the .NET 10 packs and run on Linux and Windows.
+- `dotnet publish`, by tests (.NET SDK 10.0.404 on a `linux-x64` host; after the update
+  to .NET 11, .NET SDK 11.0.100 on the Linux system described above): as a project SDK and
   as a package reference with central package management; the samples including a project
-  reference with a content file and an ASP.NET Core minimal API that serves requests;
-  `-r linux-arm64` run under `qemu-aarch64`; the runtime libraries for server GC,
-  `EventSourceSupport` and `OptimizationPreference=Speed` (linked and run; event tracing
-  itself is not exercised); relinking after a changed link option; the errors of 5.4.
-- `dotnet publish`, by hand only: a static library given as `NativeLibrary` with
-  `DirectPInvoke` (a C library built with gcc); satellite resource assemblies; the web API
-  template of the .NET SDK (`dotnet new webapiaot`); `ina` itself; the version of the SDK
-  in `global.json`.
-- `dotnet publish` for Linux on the Mac (.NET SDK 10.0.400, `osx-arm64` host), by the tests
-  that do not have to run what they publish: `-r linux-arm64` with the header of the
-  executable inspected, relinking after a changed link option, the errors of 5.4.
+  reference with a content file and an ASP.NET Core minimal API that serves requests and
+  has its event sources, like an application published with `PublishAot`; the runtime
+  libraries for server GC, `EventSourceSupport` and `OptimizationPreference=Speed` (linked
+  and run; event tracing itself is not exercised); relinking after a changed link option;
+  the errors of 6.4; `-r linux-arm64`, run under `qemu-aarch64` (with the .NET 11 SDK by
+  the continuous integration).
+- `dotnet publish`, by hand only and with the .NET 10 SDK: a static library given as
+  `NativeLibrary` with `DirectPInvoke` (a C library built with gcc); satellite resource
+  assemblies; the web API template of the .NET SDK (`dotnet new webapiaot`); `ina` itself;
+  the version of the SDK in `global.json`.
+
+macOS was verified with the .NET 10 packs and the .NET SDK 10.0.400, before the update to
+.NET 11. What is known about macOS with .NET 11 follows after this list.
+
 - `osx-arm64`: all samples run natively on an Apple silicon Mac (macOS 27.2, which was
   also the host of the build) and behave identically to the regular runtime. A larger ad
   hoc program covered what the samples do not: AES-GCM and ChaCha20-Poly1305 (Swift code
@@ -644,14 +877,14 @@ What has been verified, and how:
   section, the imports are bound to the same libraries with the same weakness, every
   entry of `__unwind_info` has the same encoding and LSDA, and Apple's `dwarfdump` finds
   the same FDEs. Apple's `codesign` accepts the signatures.
-- `dotnet publish` for macOS (.NET SDK 10.0.400, on the Mac), by tests: `-r osx-arm64` as a
-  project SDK, and as a package reference without a runtime identifier, which publishes
-  for the Mac itself; the samples including a project reference with a content file and
-  the ASP.NET Core minimal API, which serves requests and has its event sources like an
-  application published with `PublishAot`; the runtime libraries for server GC,
-  `EventSourceSupport` and `OptimizationPreference=Speed`; relinking after a changed link
-  option; the rejection of a fixed-address executable. Everything published for `osx-arm64`
-  is run. `-r osx-x64` is published and its header inspected.
+- `dotnet publish` for macOS (on the Mac), by tests: `-r osx-arm64` as a project SDK, and
+  as a package reference without a runtime identifier, which publishes for the Mac itself;
+  the samples including a project reference with a content file and the ASP.NET Core
+  minimal API, which serves requests and has its event sources like an application
+  published with `PublishAot`; the runtime libraries for server GC, `EventSourceSupport`
+  and `OptimizationPreference=Speed`; relinking after a changed link option; the rejection
+  of a fixed-address executable. Everything published for `osx-arm64` is run. `-r osx-x64`
+  is published and its header inspected.
 - Comparison of `dotnet publish` with the link of NativeAOT: the samples were also published
   with `PublishAot` and Apple's toolchain (as a development aid), for both architectures.
   The programs print the same, export the same symbol and import the same symbols of the
@@ -659,65 +892,119 @@ What has been verified, and how:
   support library is generated (4.5) instead of linked, which saves its imports for reading
   a file, and all imports are bound when the image is loaded, so that an x64 image does
   not need `dyld_stub_binder`. The segments have the same sizes to within a page.
-- `dotnet publish` for macOS on Linux: in a virtual machine with Debian 12 (arm64) and the
-  .NET SDK 10.0.400, on which neither a native toolchain nor any of Apple's tools exists
-  (no clang, gcc, `ld`, `objcopy`, `strip`, `dsymutil` or `codesign`), all four test
-  assemblies pass. That includes the publish tests for macOS, which publish for `osx-arm64`
-  and `osx-x64` there, and the publish of `linux-arm64`, which runs natively. The samples
-  were also published by hand with only `dotnet` and `sh` on the search path, on Linux and
-  on the Mac: HelloWorld and RuntimeTour come out byte-identical for both architectures.
-  The ASP.NET Core sample does not, and neither do two copies of it in different
-  directories of the same machine, because the assembly that the C# compiler produces for
-  it depends on where the project is. Apple's `codesign` accepts everything that was
-  published on Linux, and the arm64 executables run on the Mac with the output of their
-  counterparts.
+- `dotnet publish` for macOS on Linux: in a virtual machine with Debian 12 (arm64), on
+  which neither a native toolchain nor any of Apple's tools exists (no clang, gcc, `ld`,
+  `objcopy`, `strip`, `dsymutil` or `codesign`), all four test assemblies pass. That
+  includes the publish tests for macOS, which publish for `osx-arm64` and `osx-x64` there,
+  and the publish of `linux-arm64`, which runs natively. The samples were also published by
+  hand with only `dotnet` and `sh` on the search path, on Linux and on the Mac: HelloWorld
+  and RuntimeTour come out byte-identical for both architectures. The ASP.NET Core sample
+  does not, and neither do two copies of it in different directories of the same machine,
+  because the assembly that the C# compiler produces for it depends on where the project
+  is. Apple's `codesign` accepts everything that was published on Linux, and the arm64
+  executables run on the Mac with the output of their counterparts.
+- `dotnet publish` for Linux on the Mac (`osx-arm64` host), by the tests that do not have
+  to run what they publish: `-r linux-arm64` with the header of the executable inspected,
+  relinking after a changed link option, the errors of 6.4.
+
+macOS with the .NET 11 packs:
+
+- The import tables were regenerated on a Mac (SDK 26.5) for .NET 11. Compared with the
+  tables before, each lists 165 more symbols and names two of the Swift libraries in the
+  opposite order; no symbol was removed or moved to another library. Every symbol that
+  the libraries of the .NET 11 packs leave undefined is now either listed, defined by the
+  compiled application or generated by the linker.
+- On the Windows development machine and on the Linux system described above, the `ina`
+  command builds `HelloWorld`, `RuntimeTour` and `JsonReader` for `osx-arm64` and
+  `osx-x64`, and `dotnet publish` publishes them and the ASP.NET Core sample for macOS.
+  The tests read the images back: the header, the dependencies, the minimum system, the
+  symbol table after a relink. The executables require macOS 14, which is what the
+  runtime packs of .NET 11 are compiled for. `ina` itself was built for both
+  architectures by hand, on Windows.
+- On an Apple silicon Mac without Rosetta the test suite passes with the .NET 11 packs
+  and the regenerated tables. That machine runs what the others only build: the programs
+  of the Mach-O linker tests, the samples built by the `ina` command and published by
+  `dotnet publish` for `osx-arm64`, among them the ASP.NET Core sample, which serves
+  requests and has its event sources, and `ina` compiled by itself, which builds a working
+  application. The tests that run `osx-x64` executables are skipped there. The run also
+  makes `osx-arm64` a host of the build with .NET 11.
+- The descriptor through which diagnostic tools find the runtime is exported. Since
+  .NET 11 it comes from a member of the runtime library that nothing refers to, so the
+  Mach-O linker loads the members that define exported symbols, as the ELF linker does.
 
 Not verified:
 
-- **Running `osx-x64` executables.** The development machine has no Rosetta, so x64
-  executables were compared with Apple's linker as described above but never run. The
-  x64 tests execute on an Intel Mac or a Mac with Rosetta and are skipped elsewhere.
+- **macOS with .NET 11 beyond the test suite.** The comparisons with Apple's linker and
+  between hosts above were made with .NET 10, and so was the larger program for
+  cryptography and TLS; with .NET 11 the samples and `ina` are what has run. The
+  executables built with .NET 11 require macOS 14 but are bound the way Apple's linker
+  binds for macOS 12, which has not been compared with what Apple's linker does for
+  macOS 14. The continuous integration has no Mac, so macOS executables are run when
+  somebody runs the suite on one.
+- **`win-arm64` at run time.** The executables link. Their headers, the function table
+  and the unwind data of the generated functions were inspected with the tools of
+  Visual C++, the generated code was disassembled and runs in the emulator of the tests,
+  and the imports were checked against the arm64 import libraries of the Windows SDK
+  (except for the five functions that come from the Universal C Runtime instead of the
+  static C runtime). No executable has been started on Windows on ARM64. The continuous
+  integration has jobs that run the suite on such a machine, and the executables that the
+  Linux machine built; arm64 machines are opt-in for a private repository (the repository
+  variable `ARM64_RUNNERS`), and they have not been enabled.
+- **Running `osx-x64` executables.** The Mac had no Rosetta, so x64 executables were
+  compared with Apple's linker as described above but never run. The x64 tests execute on
+  an Intel Mac or a Mac with Rosetta and are skipped elsewhere.
 - **Old versions of macOS.** The executables are bound the way Apple's linker binds for
-  macOS 12, but they have only been run on macOS 27.
-- **Running on old distributions.** The executables bind only to symbols of glibc 2.27,
-  but they have not been executed on a system with such an old glibc.
-- **Windows hosts.** Building on Windows has not been tried.
-- **Real arm64 hardware**, in particular kernels with 16 KiB or 64 KiB pages (the image
-  is laid out for 64 KiB).
+  macOS 12, but they have only been run on current versions of macOS (27.2 with .NET 10).
+- **Older Windows versions.** The executables were run on Windows 11 and Windows Server
+  2025 only. The import table was generated from the DLLs of Windows 11; the runtime only
+  references functions that exist on Windows 10, but this has not been tested.
+- **Running on old Linux distributions.** The executables bind only to symbols of glibc
+  2.27, but they have not been executed on a system with such an old glibc.
+- **`linux-arm64` as a host since the update to .NET 11.** Nothing in Ina is host-specific
+  apart from choosing the ILCompiler package, and `linux-arm64` was a host of the build
+  with .NET 10, as described above. With .NET 11 the hosts were `linux-x64`, `win-x64`
+  and `osx-arm64`.
+- **Real arm64 hardware**, in particular Linux kernels with 16 KiB or 64 KiB pages (the
+  image is laid out for 64 KiB).
+- **Graphical Windows applications.** The subsystem is taken from the application, but
+  no application with a user interface has been compiled; the shared frameworks that
+  such applications use are not supported yet.
 - **Integrity of downloaded packs.** The `ina` command fetches packages over HTTPS from
   nuget.org; their signatures are not validated. (`dotnet publish` restores them with NuGet.)
-- **`dotnet publish` on other hosts.** For Linux targets only the tests named above have
-  run on a Mac, and nothing that was published there has been executed. Publishing from
-  Windows, for Linux or for macOS, should work as well, since nothing in the replaced
-  targets runs a shell command, but it has not been tried. The same holds for MSBuild on
-  .NET Framework (Visual Studio, `msbuild.exe`), where the link task has to run in a .NET
-  task host.
-- **Event sources of a web application on Linux.** Since web projects keep
-  `EventSourceSupport` (5.2), the ASP.NET Core sample is linked with the event pipe of the
-  runtime. That has been run on macOS; for Linux it has been published, but not run.
+- **`dotnet publish` on other hosts.** Nothing in the replaced targets runs a shell
+  command, so publishing should work from any host. On Windows the tests that do not have
+  to run what they publish pass, which includes publishing the samples for macOS; on a
+  Mac the tests named above published for Linux (with .NET 10). Nothing that was published
+  on a host of another system has been run. MSBuild on .NET Framework (Visual Studio,
+  `msbuild.exe`), where the link task has to run in a .NET task host, has not been tried.
 - **Other versions of the .NET SDK.** The replaced targets are internals of the NativeAOT
-  targets (5.3); only the SDKs named above have been tried.
+  targets (6.3); only the SDKs named above have been tried.
 
-## 9. Roadmap
+## 11. Roadmap
 
 Roughly in order of expected value:
 
-1. **Windows targets.** ILCompiler can emit COFF objects on any host, so this is a third
-   linker back end: PE/COFF writer, import tables for the Windows DLLs (by name, no import
-   libraries needed), and replacements for the pieces of the MSVC runtime that are linked
-   statically (startup, security cookie, exception handler registration).
-2. **Fully static Linux executables** against musl, for scratch containers. The linker
+1. **A Mac in the continuous integration**, so that macOS executables are run for every
+   change and not only when somebody runs the suite on a Mac.
+2. **Windows on ARM64 on real hardware**, and the Windows mitigations that need the
+   linker: the Control Flow Guard tables, the CET marker, a `__GSHandlerCheck` that
+   validates the cookie.
+3. **Fully static Linux executables** against musl, for scratch containers. The linker
    already resolves everything statically except the C library; this needs the musl
    runtime pack and musl's `libc.a` as an input.
-3. **Debug information**: pass the DWARF sections through and emit a symbol file (a dSYM
-   bundle for macOS). With `dotnet publish` this is what `StripSymbols` and the `.dbg`
-   file of NativeAOT stand for.
-4. **Native libraries as output** (`NativeLib`), which `dotnet publish` could then accept.
-5. **Hosting ILCompiler in-process**, which would remove the child process and allow
+4. **Windows targets with `dotnet publish`**: the link task and the replaced targets
+   cover the Linux and macOS targets. The PE linker can take the place of `link.exe` in
+   the Windows flavor of the NativeAOT targets in the same way.
+5. **Debug information**: pass the DWARF sections through and emit a symbol file (a dSYM
+   bundle for macOS); write a PDB for Windows. With `dotnet publish` this is what
+   `StripSymbols` and the `.dbg` file of NativeAOT stand for.
+6. **Native libraries as output** (`NativeLib`), which `dotnet publish` could then accept.
+7. **Hosting ILCompiler in-process**, which would remove the child process and allow
    writing the executable without an intermediate object file.
-6. Smaller items: satellite assemblies and native libraries of NuGet packages for the
-   `ina` command, `DT_RELR` packed relocations, deduplication of identical CIEs,
-   validation of package signatures, one description of the runtime libraries to link
-   for both front ends. For macOS: universal binaries (both architectures in one file),
-   merging of identical string literals and selector references, and range extension
-   thunks for images with more than 128 MiB of AArch64 code.
+8. Smaller items: satellite assemblies and native libraries of NuGet packages for the
+   `ina` command, `DT_RELR` packed relocations, deduplication of identical CIEs, identical
+   code folding for Windows, validation of package signatures, one description of the
+   runtime libraries to link for both front ends. For macOS: universal binaries (both
+   architectures in one file), merging of identical string literals and selector
+   references, and range extension thunks for images with more than 128 MiB of AArch64
+   code.

@@ -9,7 +9,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-# glibc 2.27 (Ubuntu 18.04) is the minimum version supported by .NET 10.
+# glibc 2.27 (Ubuntu 18.04) is the minimum version supported by .NET 10; .NET 11 links against it as well.
 glibc_version="2.27"
 glibc_package="2.27-3ubuntu1"
 

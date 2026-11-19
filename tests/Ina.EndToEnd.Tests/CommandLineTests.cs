@@ -40,6 +40,49 @@ public class CommandLineTests
     }
 
     [Fact]
+    public async Task CompilesAnApplicationForWindows()
+    {
+        using var directory = new OutputDirectory();
+        var output = Path.Combine(directory.Path, "hello.exe");
+
+        var result = await TestEnvironment.RunAsync(
+            "dotnet", "exec", InaAssembly, TestEnvironment.SampleAssembly("HelloWorld", "HelloWorld"), "--os", "windows", "--arch", "x64", "-o", output,
+            "--intermediate-dir", Path.Combine(directory.Path, "obj"));
+
+        Assert.True(result.ExitCode == 0, result.Output + result.Error);
+        Assert.Contains($"HelloWorld.dll -> {output}", result.Output);
+        Assert.Contains("win-x64", result.Output);
+
+        // Windows has no versioned C library, so the summary does not name one.
+        Assert.DoesNotContain("glibc", result.Output);
+        Assert.True(File.Exists(output));
+
+        if (TestEnvironment.CanRunWindowsX64)
+        {
+            Assert.Equal($"Hello, World!{Environment.NewLine}", (await TestEnvironment.RunAsync(output)).Output);
+        }
+    }
+
+    [Fact]
+    public async Task OutputIsNamedAfterTheAssemblyWithTheExtensionOfTheTarget()
+    {
+        using var directory = new OutputDirectory();
+        var assembly = TestEnvironment.SampleAssembly("HelloWorld", "HelloWorld");
+
+        // The default output is written to the current directory, so the tool is started there.
+        async Task<ProcessResult> BuildAsync(string os) => await TestEnvironment.RunInDirectoryAsync(
+            directory.Path, "dotnet", "exec", InaAssembly, assembly, "--os", os, "--arch", "x64", "--intermediate-dir", Path.Combine(directory.Path, "obj-" + os));
+
+        var windows = await BuildAsync("windows");
+        var linux = await BuildAsync("linux");
+
+        Assert.True(windows.ExitCode == 0, windows.Output + windows.Error);
+        Assert.True(linux.ExitCode == 0, linux.Output + linux.Error);
+        Assert.True(File.Exists(Path.Combine(directory.Path, "HelloWorld.exe")));
+        Assert.True(File.Exists(Path.Combine(directory.Path, "HelloWorld")));
+    }
+
+    [Fact]
     public async Task VerboseModeShowsThePhasesOfTheBuild()
     {
         using var directory = new OutputDirectory();

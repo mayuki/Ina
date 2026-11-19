@@ -14,19 +14,38 @@ public class TargetPlatformTests
     [InlineData("macos", "arm64", "osx-arm64")]
     [InlineData("macOS", "x64", "osx-x64")]
     [InlineData("osx", "aarch64", "osx-arm64")]
+    [InlineData("windows", "x64", "win-x64")]
+    [InlineData("Windows", "amd64", "win-x64")]
+    [InlineData("win", "arm64", "win-arm64")]
     public void ParseAcceptsCommonNames(string os, string architecture, string runtimeIdentifier)
     {
         Assert.Equal(runtimeIdentifier, TargetPlatform.Parse(os, architecture).RuntimeIdentifier);
     }
 
     [Fact]
-    public void ParseDefaultsToTheHostPlatform()
+    public void ParseDefaultsToTheHostWhenItIsASupportedTargetAndToLinuxOtherwise()
     {
-        // The operating system of the host is the default when Ina can target it; Linux is otherwise.
-        var operatingSystem = OperatingSystem.IsMacOS() ? TargetOperatingSystem.MacOS : TargetOperatingSystem.Linux;
+        var operatingSystem = OperatingSystem.IsWindows() ? TargetOperatingSystem.Windows
+            : OperatingSystem.IsMacOS() ? TargetOperatingSystem.MacOS
+            : TargetOperatingSystem.Linux;
         var architecture = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? TargetArchitecture.Arm64 : TargetArchitecture.X64;
 
         Assert.Equal(new TargetPlatform(operatingSystem, architecture), TargetPlatform.Parse(null, null));
+    }
+
+    [Fact]
+    public void FileNamesFollowTheConventionsOfTheTarget()
+    {
+        var linux = new TargetPlatform(TargetOperatingSystem.Linux, TargetArchitecture.X64);
+        var macOS = new TargetPlatform(TargetOperatingSystem.MacOS, TargetArchitecture.Arm64);
+        var windows = new TargetPlatform(TargetOperatingSystem.Windows, TargetArchitecture.X64);
+
+        Assert.Equal((string.Empty, ".o"), (linux.ExecutableExtension, linux.ObjectExtension));
+        Assert.Equal((string.Empty, ".o"), (macOS.ExecutableExtension, macOS.ObjectExtension));
+        Assert.Equal((".exe", ".obj"), (windows.ExecutableExtension, windows.ObjectExtension));
+
+        // ILCompiler has its own name for Windows.
+        Assert.Equal("win", windows.OperatingSystemName);
     }
 
     [Theory]
@@ -41,7 +60,7 @@ public class TargetPlatformTests
     }
 
     [Theory]
-    [InlineData("windows", "x64", "operating system")]
+    [InlineData("plan9", "x64", "operating system")]
     [InlineData("linux", "riscv64", "architecture")]
     public void ParseRejectsUnsupportedTargetsWithAHelpfulMessage(string os, string architecture, string expected)
     {

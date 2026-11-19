@@ -16,7 +16,7 @@
     <!-- Ina's linker does not write debug information yet, so ILCompiler does not need to generate it. -->
     <NativeDebugSymbols>false</NativeDebugSymbols>
 
-    <InaTasksAssembly Condition="'$(InaTasksAssembly)' == ''">$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'tasks', 'net10.0', 'Ina.Sdk.dll'))</InaTasksAssembly>
+    <InaTasksAssembly Condition="'$(InaTasksAssembly)' == ''">$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'tasks', 'net11.0', 'Ina.Sdk.dll'))</InaTasksAssembly>
     <_InaLinkOptionsFile>$(NativeIntermediateOutputPath)$(TargetName).ina.rsp</_InaLinkOptionsFile>
   </PropertyGroup>
 
@@ -60,12 +60,14 @@
       <NativeLibrary Include="$(IlcSdkPath)libbootstrapper.o" />
       <NativeLibrary Include="$(IlcSdkPath)$(FullRuntimeName).a" />
       <NativeLibrary Include="$(IlcSdkPath)$(EventPipeName).a" />
-      <NativeLibrary Include="$(IlcSdkPath)$(VxSortSupportName).a" Condition="'$(_targetArchitecture)' == 'x64'" />
+      <!-- The vectorized sort exists for x64, and since .NET 11 for arm64 as well. -->
+      <NativeLibrary Include="$(IlcSdkPath)$(VxSortSupportName).a" Condition="Exists('$(IlcSdkPath)$(VxSortSupportName).a')" />
       <NativeLibrary Include="$(IlcSdkPath)$(StandaloneGCSupportName).a" />
       <NativeLibrary Include="$(IlcSdkPath)libaotminipal.a" />
       <NativeLibrary Include="$(IlcSdkPath)libstdc++compat.a" />
 
-      <!-- zlib and brotli follow System.IO.Compression.Native, which refers to them. -->
+      <!-- zlib, brotli and (since .NET 11) zstd follow System.IO.Compression.Native, which refers to them. -->
+      <NativeLibrary Include="$(IlcFrameworkNativePath)libzstd.a" Condition="Exists('$(IlcFrameworkNativePath)libzstd.a')" />
       <NativeLibrary Include="$(IlcFrameworkNativePath)libz.a" />
       <NativeLibrary Include="$(IlcFrameworkNativePath)libbrotlienc.a" />
       <NativeLibrary Include="$(IlcFrameworkNativePath)libbrotlidec.a" />

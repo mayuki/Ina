@@ -34,8 +34,10 @@ public class MacOSTests
         Assert.Equal(0xfeedfacf, BitConverter.ToUInt32(header, 0));
         Assert.Equal(cpuType, BitConverter.ToUInt32(header, 4));
         Assert.Contains("/usr/lib/libSystem.B.dylib", build.Link.NeededLibraries);
-        Assert.Equal(["macOS 12.0"], build.Link.RequiredVersions);
-        Assert.StartsWith("10.0.", build.RuntimeVersion);
+
+        // The minimum system is the one that the runtime packs were compiled for: macOS 14 since .NET 11.
+        Assert.Equal(["macOS 14.0"], build.Link.RequiredVersions);
+        Assert.StartsWith("11.0.", build.RuntimeVersion);
 
         Assert.SkipUnless(TestEnvironment.CanRunMacOS(architecture), SkipReason);
         var run = await TestEnvironment.RunAsync(build.OutputPath, "from", "macOS");
@@ -156,7 +158,7 @@ public class MacOSTests
         Assert.True(result.ExitCode == 0, result.Output + result.Error);
         Assert.Contains($"HelloWorld.dll -> {output}", result.Output);
         Assert.Contains("osx-arm64", result.Output);
-        Assert.Contains("macOS 12.0+", result.Output);
+        Assert.Contains("macOS 14.0+", result.Output);
 
         if (TestEnvironment.CanRunMacOSArm64)
         {

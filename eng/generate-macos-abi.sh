@@ -20,8 +20,13 @@ sdk="$(xcrun --sdk macosx --show-sdk-path)"
 sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
 frameworks="$sdk/System/Library/Frameworks"
 
-# The runtime packs of .NET 10 are compiled for macOS 12.0 and later.
+# The oldest system that any supported runtime runs on: the runtime packs of .NET 10 are compiled for macOS 12.0
+# and later, those of .NET 11 for macOS 14.0 and later. The linker raises the minimum of an executable to what
+# its inputs were compiled for.
 minimum_os="12.0"
+
+# The major versions of .NET whose runtime packs the tables have to cover.
+runtimes="10 11"
 feed="https://api.nuget.org/v3-flatcontainer"
 
 # Dependencies are listed in the order in which the official .NET binaries list them.
@@ -41,12 +46,18 @@ generate() {
     local arch="$1" rid="$2"
     local package="microsoft.netcore.app.runtime.nativeaot.$rid"
 
-    # The first and the newest release of the runtime: together they cover what the servicing releases use.
+    # The first and the newest release of every runtime: together they cover what the servicing releases use.
     local versions="${DOTNET_RUNTIME_VERSIONS:-}"
     if [ -z "$versions" ]; then
-        local newest
-        newest="$(curl -fsSL "$feed/$package/index.json" | grep -o '"10\.0\.[0-9]*"' | tr -d '"' | sort -t. -k3 -n | tail -1)"
-        versions="10.0.0 $newest"
+        local index major newest
+        index="$(curl -fsSL "$feed/$package/index.json")"
+        for major in $runtimes; do
+            newest="$(grep -o "\"$major\.0\.[0-9]*\"" <<<"$index" | tr -d '"' | sort -t. -k3 -n | tail -1 || true)"
+            versions+=" $major.0.0"
+            if [ -n "$newest" ] && [ "$newest" != "$major.0.0" ]; then
+                versions+=" $newest"
+            fi
+        done
     fi
 
     local directories=""
