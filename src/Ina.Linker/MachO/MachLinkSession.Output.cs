@@ -660,6 +660,12 @@ internal sealed partial class MachLinkSession
 
     private void WriteFile(byte[] image)
     {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(_options.OutputPath));
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
         // The kernel caches the signature of a file it has executed. Replacing the file instead of overwriting it
         // makes sure that a previous build at the same path does not invalidate the new one.
         if (File.Exists(_options.OutputPath))

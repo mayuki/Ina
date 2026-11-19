@@ -323,6 +323,23 @@ public class MachOImageLayoutTests : MachOLinkerTestBase
         Assert.Equal(7, Run(output).ExitCode);
     }
 
+    [Fact]
+    public void DirectoryOfTheOutputIsCreated()
+    {
+        // In dotnet publish the link is the first step that writes into its output directory.
+        var output = Path.Combine(Path.GetDirectoryName(Link(Function("_main", Ret)))!, "native", "app");
+
+        MachOLinker.Link(new LinkOptions
+        {
+            OutputPath = output,
+            Architecture = TargetArchitecture.Arm64,
+            Imports = ImportLibrarySet.ForMacOS(TargetArchitecture.Arm64),
+            Inputs = [new LinkInput("main.o", Function("_main", Ret))],
+        });
+
+        Assert.True(File.Exists(output));
+    }
+
     /// <summary>A program with code, a string, a pointer table that is constant after loading, data and zero-filled data.</summary>
     private static byte[] ProgramWithAllKindsOfData()
     {
