@@ -57,6 +57,7 @@ internal sealed partial class MachLinkSession
     public LinkResult Run()
     {
         LoadInputs();
+        RequestExportedSymbols();
         ResolveFromArchives();
         AddGeneratedFunctions();
         DefineLinkerSymbols();
@@ -147,6 +148,29 @@ internal sealed partial class MachLinkSession
         return MachObjectFile.Parse(memberName, data).Nlist
             .Where(static symbol => !symbol.IsStab && symbol.IsExternal && !symbol.IsUndefined && !symbol.IsCommon)
             .Select(static symbol => symbol.Name);
+    }
+
+    /// <summary>
+    /// Asks for the symbols that are to be exported, so that the archive members that define them are loaded even
+    /// if nothing refers to them, like <c>-u symbol</c> does. Since .NET 11 the descriptor that diagnostic tools
+    /// look for lives in such a member. A symbol that no input defines is not an error; it is simply not exported.
+    /// </summary>
+    private void RequestExportedSymbols()
+    {
+        foreach (var exported in _options.ExportedSymbols)
+        {
+            var name = SymbolPrefix + exported;
+            if (!_globals.TryGetValue(name, out var symbol))
+            {
+                symbol = new MachSymbol(name);
+                _globals.Add(name, symbol);
+            }
+
+            if (symbol.Kind == MachSymbolKind.Undefined)
+            {
+                _unresolved.Enqueue(symbol);
+            }
+        }
     }
 
     /// <summary>Pulls in archive members until no undefined symbol can be satisfied by an archive any more.</summary>
