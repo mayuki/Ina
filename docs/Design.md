@@ -587,8 +587,9 @@ What has been verified, and how:
 - `linux-x64`: all samples run natively and behave identically to the regular runtime
   (Ubuntu 24.04 with glibc 2.39, .NET 10 packs). With the .NET 11 packs they were built on
   Windows and run on Ubuntu 26.04 (glibc 2.43) under WSL, where they pass their checks.
-- `linux-arm64`: cross compiled on x64 and run under `qemu-aarch64` with the glibc 2.39
-  of Ubuntu's cross packages (with the .NET 10 packs; with .NET 11 only built).
+- `linux-arm64`: cross compiled on x64 and run under `qemu-aarch64` with the C library of
+  Ubuntu's cross packages: glibc 2.39 with the .NET 10 packs, and glibc 2.43 with the
+  .NET 11 packs, the latter by the continuous integration.
 - `win-x64`: all samples run on Windows 11 and behave identically to the regular runtime,
   in every optimization mode and as a fixed-address image. The imports of `HelloWorld`
   were compared with those of the official NativeAOT build: identical except for the
@@ -603,7 +604,13 @@ What has been verified, and how:
   are byte-identical to those built on Windows. The Linux system was Ubuntu 26.04 with
   neither a compiler nor Wine nor anything of the Windows SDK; the checkout, the .NET SDK
   and all caches were on its own file system, and the environment of the build had no
-  access to Windows programs.
+  access to Windows programs. That system was a virtual machine on the Windows development
+  machine (WSL 2), so the continuous integration repeats the check on machines that have
+  nothing to do with each other: a hosted Ubuntu 26.04 machine builds `HelloWorld` and
+  `RuntimeTour` for `win-x64` and `win-arm64`; a hosted Windows Server 2025 machine runs
+  the `win-x64` executables and finds all four byte-identical to its own build of the
+  same assemblies. The test suite passes on both machines; each skips only the tests that
+  run executables of a system it is not.
 - Self-hosting: `ina` compiled by itself builds the samples, for Linux and for Windows,
   and compiling itself again with the native tool produces a byte-identical executable
   on both systems. The native tools also download and unpack the packs themselves, which
@@ -617,8 +624,8 @@ What has been verified, and how:
   reference with a content file and an ASP.NET Core minimal API that serves requests; the
   runtime libraries for server GC, `EventSourceSupport` and `OptimizationPreference=Speed`
   (linked and run; event tracing itself is not exercised); relinking after a changed link
-  option; the errors of 5.4. `-r linux-arm64` was run under `qemu-aarch64` with the .NET
-  10 SDK; with .NET 11 it is only built.
+  option; the errors of 5.4; `-r linux-arm64`, run under `qemu-aarch64` (with the .NET 11
+  SDK by the continuous integration).
 - `dotnet publish`, by hand only and with the .NET 10 SDK: a static library given as
   `NativeLibrary` with `DirectPInvoke` (a C library built with gcc); satellite resource
   assemblies; the web API template of the .NET SDK (`dotnet new webapiaot`); `ina` itself;
@@ -632,15 +639,12 @@ Not verified:
   and the imports were checked against the arm64 import libraries of the Windows SDK
   (except for the five functions that come from the Universal C Runtime instead of the
   static C runtime). No executable has been started on Windows on ARM64. The continuous
-  integration has jobs that do it; they have not run yet.
-- **A Linux machine of its own for the Windows targets.** The Linux system above was a
-  WSL 2 virtual machine on the Windows development machine. It runs a real Linux kernel
-  and the build was isolated from Windows, but a Linux installation on separate hardware
-  has not built the Windows targets yet. The continuous integration does exactly that on a
-  hosted Linux machine and runs the result on a hosted Windows machine; it has not run yet.
-- **Older Windows versions.** The executables were run on Windows 11 only. The import
-  table was generated from the DLLs of Windows 11; the runtime only references functions
-  that exist on Windows 10, but this has not been tested.
+  integration has jobs that run the suite on such a machine, and the executables that the
+  Linux machine built; arm64 machines are opt-in for a private repository (the repository
+  variable `ARM64_RUNNERS`), and they have not been enabled.
+- **Older Windows versions.** The executables were run on Windows 11 and Windows Server
+  2025 only. The import table was generated from the DLLs of Windows 11; the runtime only
+  references functions that exist on Windows 10, but this has not been tested.
 - **Running on old Linux distributions.** The executables bind only to symbols of glibc
   2.27, but they have not been executed on a system with such an old glibc.
 - **Hosts other than linux-x64 and win-x64.** Nothing in Ina is host-specific apart from
