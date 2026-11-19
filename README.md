@@ -128,11 +128,12 @@ no runtime code generation, reflection only where the compiler can see it, and
 | | |
 |---|---|
 | Targets | `linux-x64`, `linux-arm64` (glibc), position independent or fixed-address executables; `osx-x64`, `osx-arm64` (macOS 12 and later) |
-| Hosts | Anywhere ILCompiler runs. Developed and tested on `linux-x64` and `osx-arm64`; other hosts are untested |
+| Hosts | Anywhere ILCompiler runs. Developed and tested on `linux-x64`, `linux-arm64` and `osx-arm64`; Windows hosts are untested |
 | Frameworks | .NET 10 and later (the NativeAOT runtime pack layout introduced with .NET 10) |
 | Verified | Console apps, multi-assembly apps, `System.Text.Json`, exceptions, GC, threads and tasks, thread statics, file I/O, sockets, loopback HTTP and TLS, compression, crypto through OpenSSL (Linux) and through Apple's frameworks (macOS) |
 | Self-hosting | `ina` compiles itself, for Linux and for macOS: the native `ina` builds applications, and rebuilding itself with it yields a byte-identical executable |
 
+macOS executables come out byte-identical whether they are built on Linux or on a Mac.
 `osx-x64` executables have been compared instruction by instruction with what Apple's
 linker produces from the same inputs, but they have not been run: see
 [Verification](docs/Design.md#7-verification).

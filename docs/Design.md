@@ -417,10 +417,17 @@ What has been verified, and how:
   and time zones, child processes. Its output is identical to that of the regular runtime.
 - Self-hosting on macOS: `ina` compiled by itself builds the samples, and compiling itself
   again with the native tool produces a byte-identical executable.
-- Independence from Apple's tools: the samples were built inside a sandbox in which neither
-  Xcode nor the Command Line Tools can be read and nothing in `/usr/bin` can be executed.
-  The product code has no macOS-specific code path; the host only decides which ILCompiler
-  package is used.
+- Building macOS executables on Linux: in a virtual machine with Debian 12 (arm64) and
+  nothing but the .NET runtime, `ina` built all samples and itself for `osx-arm64` and
+  `osx-x64`. Every executable is byte-identical to the one built on the Mac from the same
+  inputs and is accepted by Apple's `codesign`; the arm64 ones run on the Mac, including the
+  `ina` that was built on Linux, which in turn builds a working application. The three test
+  assemblies pass on that Linux host too, which also covers `linux-arm64` as a host and
+  runs the AArch64 ELF tests natively instead of under emulation.
+- Independence from Apple's tools on a Mac: the samples were built inside a sandbox in
+  which neither Xcode nor the Command Line Tools can be read and nothing in `/usr/bin` can
+  be executed. The product code has no macOS-specific code path; the host only decides
+  which ILCompiler package is used.
 - Comparison with Apple's linker: the same objects were linked with `ld` (as a development
   aid) and compared with Ina's output for both architectures. The disassembly of all
   functions is identical except for padding, the rebase locations match in number per
@@ -433,15 +440,11 @@ Not verified:
 - **Running `osx-x64` executables.** The development machine has no Rosetta, so x64
   executables were compared with Apple's linker as described above but never run. The
   x64 tests execute on an Intel Mac or a Mac with Rosetta and are skipped elsewhere.
-- **Building macOS executables on a host other than macOS.** Nothing in the code path
-  depends on the host, and the tests build and inspect macOS executables on every host,
-  but so far they have only been run on a Mac.
 - **Old versions of macOS.** The executables are bound the way Apple's linker binds for
   macOS 12, but they have only been run on macOS 27.
 - **Running on old distributions.** The executables bind only to symbols of glibc 2.27,
   but they have not been executed on a system with such an old glibc.
-- **Hosts other than linux-x64 and osx-arm64.** Building on Windows or arm64 Linux has not
-  been tried.
+- **Windows hosts.** Building on Windows has not been tried.
 - **Real arm64 hardware**, in particular kernels with 16 KiB or 64 KiB pages (the image
   is laid out for 64 KiB).
 - **Integrity of downloaded packs.** Packages are fetched over HTTPS from nuget.org; their
