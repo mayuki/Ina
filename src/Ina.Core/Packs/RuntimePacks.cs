@@ -11,6 +11,19 @@ public sealed record RuntimePacks(string Version, string CompilerDirectory, stri
     /// <summary>The ILCompiler executable, a native program for the host machine.</summary>
     public string CompilerPath => Path.Combine(CompilerDirectory, "tools", OperatingSystem.IsWindows() ? "ilc.exe" : "ilc");
 
+    /// <summary>
+    /// The package with the build logic of NativeAOT, for the data files it carries. Only resolved for targets
+    /// that need one of them.
+    /// </summary>
+    public string? CompilerSupportDirectory { get; init; }
+
+    /// <summary>
+    /// Lists of functions in system libraries that may be bound at link time: for Windows, the APIs that exist on
+    /// every supported version of the system. Everything else is looked up when it is first called.
+    /// </summary>
+    public IReadOnlyList<string> DirectPInvokeLists =>
+        CompilerSupportDirectory is null ? [] : [Path.Combine(CompilerSupportDirectory, "build", "WindowsAPIs.txt")];
+
     /// <summary>Static libraries of the runtime and the NativeAOT flavor of the core library.</summary>
     public string NativeDirectory => Path.Combine(RuntimeDirectory, "runtimes", Target.RuntimeIdentifier, "native");
 
@@ -29,6 +42,9 @@ public sealed record RuntimePacks(string Version, string CompilerDirectory, stri
     public static string CompilerPackageId(string hostRuntimeIdentifier) => $"runtime.{hostRuntimeIdentifier}.Microsoft.DotNet.ILCompiler";
 
     public static string RuntimePackageId(TargetPlatform target) => $"Microsoft.NETCore.App.Runtime.NativeAOT.{target.RuntimeIdentifier}";
+
+    /// <summary>The host independent part of ILCompiler: MSBuild logic and the data files that go with it.</summary>
+    public const string CompilerSupportPackageId = "Microsoft.DotNet.ILCompiler";
 
     /// <summary>
     /// Locates the packs for a target, downloading what is missing. Without an explicit version the newest patch
@@ -51,7 +67,10 @@ public sealed record RuntimePacks(string Version, string CompilerDirectory, stri
         logger.LogDebug("Using runtime packs {Version} for {Target}", version, target.RuntimeIdentifier);
         var compiler = await store.GetPackageDirectoryAsync(compilerId, version, cancellationToken).ConfigureAwait(false);
         var runtime = await store.GetPackageDirectoryAsync(runtimeId, version, cancellationToken).ConfigureAwait(false);
-        return new RuntimePacks(version, compiler, runtime, target);
+        var support = target.OperatingSystem == TargetOperatingSystem.Windows
+            ? await store.GetPackageDirectoryAsync(CompilerSupportPackageId, version, cancellationToken).ConfigureAwait(false)
+            : null;
+        return new RuntimePacks(version, compiler, runtime, target) { CompilerSupportDirectory = support };
     }
 
     /// <summary>Picks the newest version of the given major.minor line, preferring stable releases over previews.</summary>

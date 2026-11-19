@@ -7,20 +7,31 @@ namespace Ina;
 public enum TargetOperatingSystem
 {
     Linux,
+    Windows,
 }
 
 /// <summary>The platform an executable is built for.</summary>
 public sealed record TargetPlatform(TargetOperatingSystem OperatingSystem, TargetArchitecture Architecture)
 {
-    /// <summary>The .NET runtime identifier, e.g. <c>linux-x64</c>.</summary>
+    /// <summary>The .NET runtime identifier, e.g. <c>linux-x64</c> or <c>win-arm64</c>.</summary>
     public string RuntimeIdentifier => $"{OperatingSystemName}-{ArchitectureName}";
 
-    /// <summary>The name ILCompiler uses for the operating system (<c>--targetos</c>).</summary>
+    /// <summary>
+    /// The name of the operating system in runtime identifiers, which is also what ILCompiler expects
+    /// (<c>--targetos</c>).
+    /// </summary>
     public string OperatingSystemName => OperatingSystem switch
     {
         TargetOperatingSystem.Linux => "linux",
+        TargetOperatingSystem.Windows => "win",
         _ => throw new InaException($"Unsupported target operating system: {OperatingSystem}"),
     };
+
+    /// <summary>The extension that executables have on the target system, including the dot.</summary>
+    public string ExecutableExtension => OperatingSystem == TargetOperatingSystem.Windows ? ".exe" : string.Empty;
+
+    /// <summary>The conventional extension of object files for the target system.</summary>
+    public string ObjectExtension => OperatingSystem == TargetOperatingSystem.Windows ? ".obj" : ".o";
 
     /// <summary>The name ILCompiler uses for the architecture (<c>--targetarch</c>).</summary>
     public string ArchitectureName => Architecture switch
@@ -32,10 +43,11 @@ public sealed record TargetPlatform(TargetOperatingSystem OperatingSystem, Targe
 
     public static TargetPlatform Parse(string? operatingSystem, string? architecture)
     {
-        var os = (operatingSystem ?? "linux").ToLowerInvariant() switch
+        var os = (operatingSystem ?? HostOperatingSystemName).ToLowerInvariant() switch
         {
             "linux" => TargetOperatingSystem.Linux,
-            var other => throw new InaException($"Unsupported target operating system '{other}'. Supported: linux."),
+            "windows" or "win" => TargetOperatingSystem.Windows,
+            var other => throw new InaException($"Unsupported target operating system '{other}'. Supported: linux, windows."),
         };
 
         var arch = (architecture ?? HostArchitectureName).ToLowerInvariant() switch
@@ -63,6 +75,12 @@ public sealed record TargetPlatform(TargetOperatingSystem OperatingSystem, Targe
             return $"{os}-{HostArchitectureName}";
         }
     }
+
+    /// <summary>
+    /// The target that is built when none is chosen: the operating system of this machine if Ina can build for it,
+    /// and Linux otherwise.
+    /// </summary>
+    private static string HostOperatingSystemName => System.OperatingSystem.IsWindows() ? "windows" : "linux";
 
     private static string HostArchitectureName => RuntimeInformation.ProcessArchitecture switch
     {

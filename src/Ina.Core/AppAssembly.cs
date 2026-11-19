@@ -7,11 +7,13 @@ namespace Ina;
 /// <summary>What Ina needs to know about the application that is compiled.</summary>
 public sealed class AppAssembly
 {
-    private AppAssembly(string path, string name, bool hasEntryPoint, Version? frameworkVersion, IReadOnlyDictionary<string, string> runtimeKnobs)
+    private AppAssembly(
+        string path, string name, bool hasEntryPoint, bool isWindowsApplication, Version? frameworkVersion, IReadOnlyDictionary<string, string> runtimeKnobs)
     {
         Path = path;
         Name = name;
         HasEntryPoint = hasEntryPoint;
+        IsWindowsApplication = isWindowsApplication;
         FrameworkVersion = frameworkVersion;
         RuntimeKnobs = runtimeKnobs;
     }
@@ -22,6 +24,12 @@ public sealed class AppAssembly
     public string Name { get; }
 
     public bool HasEntryPoint { get; }
+
+    /// <summary>
+    /// Whether the application was built as a graphical Windows application (<c>OutputType=WinExe</c>), which
+    /// Windows starts without a console window.
+    /// </summary>
+    public bool IsWindowsApplication { get; }
 
     /// <summary>The version of Microsoft.NETCore.App the application targets (major.minor), if it could be determined.</summary>
     public Version? FrameworkVersion { get; }
@@ -58,7 +66,8 @@ public sealed class AppAssembly
             var name = metadata.GetString(metadata.GetAssemblyDefinition().Name);
             var hasEntryPoint = pe.PEHeaders.CorHeader?.EntryPointTokenOrRelativeVirtualAddress is not (null or 0);
             var (knobs, configuredVersion) = ReadRuntimeConfig(System.IO.Path.ChangeExtension(path, ".runtimeconfig.json"));
-            return new AppAssembly(path, name, hasEntryPoint, configuredVersion ?? ReadTargetFramework(metadata), knobs);
+            var isWindowsApplication = pe.PEHeaders.PEHeader?.Subsystem == Subsystem.WindowsGui;
+            return new AppAssembly(path, name, hasEntryPoint, isWindowsApplication, configuredVersion ?? ReadTargetFramework(metadata), knobs);
         }
         catch (BadImageFormatException e)
         {

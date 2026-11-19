@@ -16,6 +16,9 @@ internal static class TestEnvironment
     /// <summary>Whether executables built for x86-64 Linux can be run on this machine.</summary>
     public static bool CanRunLinuxX64 => OperatingSystem.IsLinux() && RuntimeInformation.ProcessArchitecture == Architecture.X64;
 
+    /// <summary>Whether executables built for x64 Windows can be run on this machine.</summary>
+    public static bool CanRunWindowsX64 => OperatingSystem.IsWindows() && RuntimeInformation.ProcessArchitecture == Architecture.X64;
+
     private const string Arm64Emulator = "qemu-aarch64";
     private const string Arm64SystemRoot = "/usr/aarch64-linux-gnu";
 
@@ -58,14 +61,18 @@ internal static class TestEnvironment
         }
     }
 
-    /// <summary>Compiles an application to a native executable inside <paramref name="directory"/>.</summary>
-    public static async Task<BuildResult> BuildAsync(string assembly, string directory, Func<BuildOptions, BuildOptions>? configure = null)
+    /// <summary>Compiles an application to a native executable for x64 Linux inside <paramref name="directory"/>.</summary>
+    public static Task<BuildResult> BuildAsync(string assembly, string directory, Func<BuildOptions, BuildOptions>? configure = null) =>
+        BuildAsync(assembly, directory, TargetPlatform.Parse("linux", "x64"), configure);
+
+    /// <summary>Compiles an application to a native executable for <paramref name="target"/> inside <paramref name="directory"/>.</summary>
+    public static async Task<BuildResult> BuildAsync(string assembly, string directory, TargetPlatform target, Func<BuildOptions, BuildOptions>? configure = null)
     {
         var options = new BuildOptions
         {
             AssemblyPath = assembly,
-            OutputPath = Path.Combine(directory, Path.GetFileNameWithoutExtension(assembly)),
-            Target = TargetPlatform.Parse("linux", "x64"),
+            OutputPath = Path.Combine(directory, Path.GetFileNameWithoutExtension(assembly) + target.ExecutableExtension),
+            Target = target,
             IntermediateDirectory = Path.Combine(directory, "obj"),
         };
 
@@ -97,9 +104,15 @@ internal static class TestEnvironment
         }
     }
 
-    public static async Task<ProcessResult> RunAsync(string fileName, params string[] arguments)
+    public static Task<ProcessResult> RunAsync(string fileName, params string[] arguments) => RunInDirectoryAsync(string.Empty, fileName, arguments);
+
+    /// <summary>Runs a process with <paramref name="workingDirectory"/> as its current directory.</summary>
+    public static async Task<ProcessResult> RunInDirectoryAsync(string workingDirectory, string fileName, params string[] arguments)
     {
-        var startInfo = new ProcessStartInfo(fileName) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        var startInfo = new ProcessStartInfo(fileName)
+        {
+            RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, WorkingDirectory = workingDirectory,
+        };
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);

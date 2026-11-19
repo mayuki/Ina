@@ -21,6 +21,23 @@ public class AppAssemblyTests
     }
 
     [Fact]
+    public void GraphicalApplicationIsRecognizedByItsSubsystem()
+    {
+        // OutputType=WinExe only differs from Exe in the subsystem field of the PE header, which follows the
+        // signature (4 bytes), the file header (20 bytes) and 68 bytes of the optional header.
+        using var directory = new TemporaryDirectory();
+        var image = File.ReadAllBytes(ExecutableAssembly);
+        var subsystem = BitConverter.ToInt32(image, 0x3c) + 4 + 20 + 68;
+        Assert.Equal(3, BitConverter.ToUInt16(image, subsystem)); // console
+        image[subsystem] = 2;                                     // graphical
+        var windowed = directory.Combine("Windowed.dll");
+        File.WriteAllBytes(windowed, image);
+
+        Assert.False(AppAssembly.Load(ExecutableAssembly).IsWindowsApplication);
+        Assert.True(AppAssembly.Load(windowed).IsWindowsApplication);
+    }
+
+    [Fact]
     public void LibraryHasNoEntryPoint()
     {
         Assert.False(AppAssembly.Load(LibraryAssembly).HasEntryPoint);

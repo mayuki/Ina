@@ -31,6 +31,12 @@ public sealed record IlcOptions
     /// <summary>Runtime configuration of the application (<c>configProperties</c> of runtimeconfig.json).</summary>
     public IReadOnlyDictionary<string, string> RuntimeKnobs { get; init; } = new Dictionary<string, string>();
 
+    /// <summary>
+    /// Files that list functions of system libraries which the compiler may call directly, see
+    /// <see cref="Packs.RuntimePacks.DirectPInvokeLists"/>.
+    /// </summary>
+    public IReadOnlyList<string> DirectPInvokeLists { get; init; } = [];
+
     /// <summary>Emit DWARF debug information into the object file.</summary>
     public bool DebugInfo { get; init; }
 
@@ -94,6 +100,12 @@ public static class IlcArguments
     ];
 
     /// <summary>
+    /// The same for Windows, where most of the platform abstraction is implemented in managed code on top of the
+    /// system DLLs.
+    /// </summary>
+    private static readonly string[] WindowsDirectPInvokeLibraries = ["System.Globalization.Native", "System.IO.Compression.Native"];
+
+    /// <summary>
     /// The symbol through which diagnostic tools find the runtime; it stays visible in the executable. .NET 11
     /// replaced the debug header of earlier versions with the data contract descriptor.
     /// </summary>
@@ -111,9 +123,15 @@ public static class IlcArguments
         arguments.Add($"--targetos:{options.Target.OperatingSystemName}");
         arguments.Add($"--targetarch:{options.Target.ArchitectureName}");
 
+        var isWindows = options.Target.OperatingSystem == TargetOperatingSystem.Windows;
+
         // Stores pointers in a compact relative form and expands them at startup, which keeps the image small and
-        // reduces the number of load-time relocations.
-        arguments.Add("--dehydrate");
+        // reduces the number of load-time relocations. Windows relocates images cheaply, so there the official
+        // build only trades startup time for size on request.
+        if (!isWindows || options.Optimization == OptimizationMode.Size)
+        {
+            arguments.Add("--dehydrate");
+        }
 
         if (options.Optimization != OptimizationMode.None)
         {
@@ -125,9 +143,11 @@ public static class IlcArguments
             arguments.Add("-g");
         }
 
-        arguments.Add($"--export-dynamic-symbol:{DiagnosticsSymbol(options.RuntimeVersion)}");
+        // On Windows the compiler has to know that the exported symbol is a variable, not a function.
+        arguments.Add($"--export-dynamic-symbol:{DiagnosticsSymbol(options.RuntimeVersion)}{(isWindows ? ",DATA" : string.Empty)}");
         arguments.AddRange(InitAssemblies.Select(static assembly => $"--initassembly:{assembly}"));
-        arguments.AddRange(DirectPInvokeLibraries.Select(static library => $"--directpinvoke:{library}"));
+        arguments.AddRange((isWindows ? WindowsDirectPInvokeLibraries : DirectPInvokeLibraries).Select(static library => $"--directpinvoke:{library}"));
+        arguments.AddRange(options.DirectPInvokeLists.Select(static list => $"--directpinvokelist:{list}"));
 
         var knobs = MergeKnobs(options.RuntimeKnobs);
         foreach (var (name, value) in knobs)
@@ -145,6 +165,12 @@ public static class IlcArguments
         // Stack traces show method names. Since .NET 11 the switch takes the level of detail.
         arguments.Add(options.RuntimeVersion.Major >= 11 ? "--stacktracedata:frames" : "--stacktracedata");
         arguments.Add("--scanreflection");
+        if (isWindows)
+        {
+            // Copies the Win32 resources of the application (version information, icon, manifest) into the object.
+            arguments.Add($"--win32resourcemodule:{Path.GetFileNameWithoutExtension(options.InputAssembly)}");
+        }
+
         arguments.Add($"--methodbodyfolding:{(options.Optimization == OptimizationMode.None ? "none" : "generic")}");
         switch (options.Optimization)
         {

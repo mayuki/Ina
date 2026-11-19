@@ -13,14 +13,13 @@ var assemblyArgument = new Argument<string>("assembly")
 };
 var outputOption = new Option<string?>("--output", "-o")
 {
-    Description = "Path of the executable to write [default: the assembly name in the current directory]",
+    Description = "Path of the executable to write [default: the assembly name in the current directory, with .exe for Windows]",
 };
-var osOption = new Option<string>("--os")
+var osOption = new Option<string?>("--os")
 {
-    Description = "Target operating system",
-    DefaultValueFactory = static _ => "linux",
+    Description = "Target operating system: linux or windows [default: the system of this machine if it is one of them, otherwise linux]",
 };
-osOption.AcceptOnlyFromAmong("linux");
+osOption.AcceptOnlyFromAmong("linux", "windows");
 var archOption = new Option<string?>("--arch")
 {
     Description = "Target architecture: x64 or arm64 [default: the architecture of this machine]",
@@ -42,11 +41,11 @@ var invariantOption = new Option<bool>("--invariant-globalization")
 };
 var symbolsOption = new Option<bool>("--symbols")
 {
-    Description = "Keep a symbol table in the executable (useful for debuggers and profilers)",
+    Description = "Keep a symbol table in the executable (useful for debuggers and profilers; Linux targets only)",
 };
 var noPieOption = new Option<bool>("--no-pie")
 {
-    Description = "Produce a fixed-address executable instead of a position independent one",
+    Description = "Produce a fixed-address executable instead of one that the system can load at a random address",
 };
 var intermediateOption = new Option<string?>("--intermediate-dir")
 {

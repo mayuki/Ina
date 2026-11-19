@@ -6,6 +6,7 @@ namespace Ina.Tests;
 public class IlcArgumentsTests
 {
     private static readonly TargetPlatform LinuxX64 = new(TargetOperatingSystem.Linux, TargetArchitecture.X64);
+    private static readonly TargetPlatform WindowsX64 = new(TargetOperatingSystem.Windows, TargetArchitecture.X64);
 
     private static IlcOptions Options => new()
     {
@@ -66,6 +67,42 @@ public class IlcArgumentsTests
         Assert.Contains("--stacktracedata", arguments);
         Assert.DoesNotContain("--stacktracedata:frames", arguments);
         Assert.Equal("DotNetRuntimeDebugHeader", IlcArguments.DiagnosticsSymbol(new Version(10, 0)));
+    }
+
+    [Fact]
+    public void WindowsTargetsGetTheArgumentsOfTheOfficialWindowsBuild()
+    {
+        var arguments = IlcArguments.Build(Options with
+        {
+            Target = WindowsX64,
+            OutputObject = "/obj/App.obj",
+            DirectPInvokeLists = ["/packs/build/WindowsAPIs.txt"],
+        });
+
+        Assert.Contains("--targetos:win", arguments);
+        Assert.Contains("--runtimeknob:RUNTIME_IDENTIFIER=win-x64", arguments);
+
+        // Calls into the system DLLs that every Windows has are bound at link time rather than looked up at run time.
+        Assert.Contains("--directpinvokelist:/packs/build/WindowsAPIs.txt", arguments);
+
+        // Only two native libraries of the framework are linked statically on Windows.
+        Assert.Contains("--directpinvoke:System.Globalization.Native", arguments);
+        Assert.Contains("--directpinvoke:System.IO.Compression.Native", arguments);
+        Assert.DoesNotContain("--directpinvoke:System.Native", arguments);
+
+        // The version information and the icon of the application are carried over.
+        Assert.Contains("--win32resourcemodule:App", arguments);
+        Assert.Contains("--export-dynamic-symbol:DotNetRuntimeContractDescriptor,DATA", arguments);
+    }
+
+    [Theory]
+    [InlineData(OptimizationMode.Blended, false)]
+    [InlineData(OptimizationMode.Speed, false)]
+    [InlineData(OptimizationMode.Size, true)]
+    public void WindowsImagesStoreDataInCompactFormOnlyWhenOptimizingForSize(OptimizationMode mode, bool dehydrate)
+    {
+        Assert.Equal(dehydrate, IlcArguments.Build(Options with { Target = WindowsX64, Optimization = mode }).Contains("--dehydrate"));
+        Assert.Contains("--dehydrate", IlcArguments.Build(Options with { Optimization = mode }));
     }
 
     [Fact]

@@ -11,21 +11,38 @@ public class TargetPlatformTests
     [InlineData("linux", "x86_64", "linux-x64")]
     [InlineData("linux", "arm64", "linux-arm64")]
     [InlineData("linux", "aarch64", "linux-arm64")]
+    [InlineData("windows", "x64", "win-x64")]
+    [InlineData("Windows", "amd64", "win-x64")]
+    [InlineData("win", "arm64", "win-arm64")]
     public void ParseAcceptsCommonNames(string os, string architecture, string runtimeIdentifier)
     {
         Assert.Equal(runtimeIdentifier, TargetPlatform.Parse(os, architecture).RuntimeIdentifier);
     }
 
     [Fact]
-    public void ParseDefaultsToLinuxOnTheHostArchitecture()
+    public void ParseDefaultsToTheHostWhenItIsASupportedTargetAndToLinuxOtherwise()
     {
-        var expected = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? TargetArchitecture.Arm64 : TargetArchitecture.X64;
+        var architecture = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? TargetArchitecture.Arm64 : TargetArchitecture.X64;
+        var operatingSystem = OperatingSystem.IsWindows() ? TargetOperatingSystem.Windows : TargetOperatingSystem.Linux;
 
-        Assert.Equal(new TargetPlatform(TargetOperatingSystem.Linux, expected), TargetPlatform.Parse(null, null));
+        Assert.Equal(new TargetPlatform(operatingSystem, architecture), TargetPlatform.Parse(null, null));
+    }
+
+    [Fact]
+    public void FileNamesFollowTheConventionsOfTheTarget()
+    {
+        var linux = new TargetPlatform(TargetOperatingSystem.Linux, TargetArchitecture.X64);
+        var windows = new TargetPlatform(TargetOperatingSystem.Windows, TargetArchitecture.X64);
+
+        Assert.Equal((string.Empty, ".o"), (linux.ExecutableExtension, linux.ObjectExtension));
+        Assert.Equal((".exe", ".obj"), (windows.ExecutableExtension, windows.ObjectExtension));
+
+        // ILCompiler has its own name for Windows.
+        Assert.Equal("win", windows.OperatingSystemName);
     }
 
     [Theory]
-    [InlineData("windows", "x64", "operating system")]
+    [InlineData("plan9", "x64", "operating system")]
     [InlineData("linux", "riscv64", "architecture")]
     public void ParseRejectsUnsupportedTargetsWithAHelpfulMessage(string os, string architecture, string expected)
     {
