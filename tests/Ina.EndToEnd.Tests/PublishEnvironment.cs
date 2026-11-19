@@ -32,6 +32,10 @@ public sealed class PublishEnvironment : IAsyncLifetime
 
         // Build nodes that outlive a command would keep the task assembly of an earlier build loaded.
         ["MSBUILDDISABLENODEREUSE"] = "1",
+
+        // The samples treat warnings as errors, and NuGet warns when an advisory exists for the compiler package of
+        // the installed .NET SDK. That says something about the SDK of the machine, not about what is tested here.
+        ["NuGetAudit"] = "false",
     };
 
     public async ValueTask InitializeAsync()
