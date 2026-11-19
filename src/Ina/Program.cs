@@ -4,6 +4,7 @@ using Ina;
 using Ina.Cli;
 using Ina.Compilation;
 using Ina.Diagnostics;
+using Ina.Linker;
 using Ina.Packs;
 using Microsoft.Extensions.Logging;
 
@@ -107,7 +108,7 @@ root.SetAction(async (parseResult, cancellationToken) =>
         Console.Out.WriteLine(
             $"{Path.GetFileName(options.AssemblyPath)} -> {result.OutputPath} " +
             $"({result.OutputSize / 1024.0 / 1024.0:F1} MB, {options.Target.RuntimeIdentifier}, .NET {result.RuntimeVersion}" +
-            $"{Summary.MinimumSystem(result.Link.RequiredVersions)}, " +
+            $"{MinimumSystem(result.Link)}, " +
             $"compile {result.CompileTime.TotalSeconds:F1}s, link {result.LinkTime.TotalSeconds:F2}s)");
         return 0;
     }
@@ -123,3 +124,9 @@ root.SetAction(async (parseResult, cancellationToken) =>
 });
 
 return await root.Parse(args).InvokeAsync();
+
+// What the executable requires of the system it runs on: a C library for Linux, a version of the system for macOS.
+static string MinimumSystem(LinkResult link) =>
+    link.MinimumGlibcVersion is { } glibc ? $", glibc {glibc}+"
+    : link.MinimumMacOSVersion is { } macOS ? $", macOS {macOS}+"
+    : string.Empty;

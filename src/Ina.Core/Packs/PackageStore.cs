@@ -154,27 +154,7 @@ public sealed class PackageStore : IDisposable
             MakeToolsExecutable(staging);
             await File.WriteAllTextAsync(Path.Combine(staging, ".ina-complete"), string.Empty, cancellationToken).ConfigureAwait(false);
 
-            // Builds that start at the same time all find the package missing and download it. The first one to
-            // finish wins; its copy may already be in use, so the others must not replace it.
-            if (IsComplete(destination))
-            {
-                return;
-            }
-
-            if (Directory.Exists(destination))
-            {
-                // Left behind by an interrupted download.
-                Directory.Delete(destination, recursive: true);
-            }
-
-            try
-            {
-                Directory.Move(staging, destination);
-            }
-            catch (IOException) when (IsComplete(destination))
-            {
-                // Another process finished between the check and the move.
-            }
+            Install(staging, destination);
         }
         catch (HttpRequestException e)
         {
@@ -185,6 +165,33 @@ public sealed class PackageStore : IDisposable
             if (Directory.Exists(staging))
             {
                 Directory.Delete(staging, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Puts an extracted package in place. Several builds can download the same package at the same time, each
+    /// into its own staging directory. The rename is atomic, so whoever finishes first provides the package, and
+    /// the others leave it alone: it may already be in use by the build that installed it.
+    /// </summary>
+    private static void Install(string staging, string destination)
+    {
+        const int maxAttempts = 3;
+        for (var attempt = 1; !IsComplete(destination); attempt++)
+        {
+            try
+            {
+                // Whatever is there is not a package, e.g. the remains of an extraction that was interrupted.
+                if (Directory.Exists(destination))
+                {
+                    Directory.Delete(destination, recursive: true);
+                }
+
+                Directory.Move(staging, destination);
+            }
+            catch (IOException) when (attempt < maxAttempts)
+            {
+                // Another build was changing the directory at the same moment. Look at what is there now.
             }
         }
     }

@@ -7,7 +7,6 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>ina</ToolCommandName>
     <PackageId>Ina</PackageId>
-    <Version>0.1.0</Version>
     <Description>Ina (IL to NAtive) compiles .NET applications to native executables without a native toolchain.</Description>
   </PropertyGroup>
 

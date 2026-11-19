@@ -146,27 +146,36 @@ public class RuntimePacksTests
         Assert.Equal(["1.0.0"], store.InstalledVersions("Some.Package"));
     }
 
+
     [Fact]
-    public async Task PackageInstalledByAnotherProcessInTheMeantimeIsLeftAlone()
+    public async Task PackageThatAnotherBuildInstalledInTheMeantimeIsKept()
     {
+        // Two builds that need a package for the first time both download it. The one that finishes later must not
+        // replace the directory, because the other build is already compiling with what is in there.
         using var directory = new TemporaryDirectory();
-        var handler = new FeedHandler();
-        handler.AddPackage("Some.Package", "1.0.0", ("content.txt", "downloaded here"));
+        var release = new TaskCompletionSource();
+        var fastFeed = new FeedHandler();
+        var slowFeed = new FeedHandler { Gate = release.Task };
+        fastFeed.AddPackage(CompilerId, "10.0.7", ("tools/ilc", "compiler"));
+        slowFeed.AddPackage(CompilerId, "10.0.7", ("tools/ilc", "compiler"));
+        using var first = new PackageStore(directory.Combine("cache"), [], Feed, NullLogger.Instance, fastFeed);
+        using var second = new PackageStore(directory.Combine("cache"), [], Feed, NullLogger.Instance, slowFeed);
 
-        // Two builds that start at the same time both find the package missing. While this one downloads, the
-        // other one finishes and starts to use its copy.
-        handler.BeforeResponse = () => directory.CreateFile(Path.Combine("cache", "some.package", "1.0.0", ".ina-complete"));
-        handler.BeforeResponse += () => directory.CreateFile(Path.Combine("cache", "some.package", "1.0.0", "content.txt"), "installed by the other process");
-        using var store = new PackageStore(directory.Combine("cache"), [], Feed, NullLogger.Instance, handler);
+        // The second build has found the package missing and waits for its download.
+        var pending = second.GetPackageDirectoryAsync(CompilerId, "10.0.7", TestContext.Current.CancellationToken);
+        var installed = await first.GetPackageDirectoryAsync(CompilerId, "10.0.7", TestContext.Current.CancellationToken);
+        var fileInUse = Path.Combine(installed, "tools", "in-use-by-the-first-build");
+        File.WriteAllText(fileInUse, string.Empty);
+        release.SetResult();
 
-        var package = await store.GetPackageDirectoryAsync("Some.Package", "1.0.0", TestContext.Current.CancellationToken);
+        Assert.Equal(installed, await pending);
+        Assert.True(File.Exists(fileInUse));
+        Assert.Equal("compiler", File.ReadAllText(Path.Combine(installed, "tools", "ilc")));
 
-        // Replacing the directory would pull the files away from under the other process.
-        Assert.Equal("installed by the other process", File.ReadAllText(Path.Combine(package, "content.txt")));
-        Assert.Equal(["1.0.0"], Directory.EnumerateDirectories(directory.Combine("cache", "some.package")).Select(Path.GetFileName));
+        // The download that came second is discarded rather than left behind.
+        Assert.Equal([installed], Directory.GetDirectories(Path.GetDirectoryName(installed)!));
     }
 
-    /// <summary>Lays out a package the way NuGet extracts it into the global packages folder.</summary>
     private static void InstallPackage(TemporaryDirectory directory, string root, string id, string version)
     {
         directory.CreateFile(Path.Combine(root, id.ToLowerInvariant(), version, ".nupkg.metadata"), "{}");
@@ -186,8 +195,8 @@ public class RuntimePacksTests
 
         public List<string> Requests { get; } = [];
 
-        /// <summary>Runs before a request is answered, to simulate what happens elsewhere during a download.</summary>
-        public Action? BeforeResponse { get; set; }
+        /// <summary>Package downloads are answered once this task completes, which lets a test order concurrent downloads.</summary>
+        public Task Gate { get; init; } = Task.CompletedTask;
 
         public void AddVersions(string id, params string[] versions)
         {
@@ -211,14 +220,18 @@ public class RuntimePacksTests
             _responses[$"{Feed}{lowerId}/{version}/{lowerId}.{version}.nupkg"] = stream.ToArray();
         }
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var url = request.RequestUri!.ToString();
             Requests.Add(url);
-            BeforeResponse?.Invoke();
-            return Task.FromResult(_responses.TryGetValue(url, out var content)
+            if (url.EndsWith(".nupkg", StringComparison.Ordinal))
+            {
+                await Gate.WaitAsync(cancellationToken);
+            }
+
+            return _responses.TryGetValue(url, out var content)
                 ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) }
-                : new HttpResponseMessage(HttpStatusCode.NotFound));
+                : new HttpResponseMessage(HttpStatusCode.NotFound);
         }
     }
 }
