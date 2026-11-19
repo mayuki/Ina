@@ -72,7 +72,7 @@ public class PublishConfigurationTests(PublishEnvironment environment)
         Assert.NotEqual(0, publish.ExitCode);
         Assert.Contains("error INA1002", publish.Output);
         Assert.Contains(runtimeIdentifier, publish.Output);
-        Assert.Contains("linux-x64, linux-arm64", publish.Output);
+        Assert.Contains("linux-x64, linux-arm64, osx-x64, osx-arm64", publish.Output);
 
         // The restore, which would fetch the compiler and the runtime pack of that platform, has not happened.
         Assert.False(File.Exists(Path.Combine(project.ProjectDirectory, "obj", "project.assets.json")));
