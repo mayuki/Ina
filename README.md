@@ -38,9 +38,8 @@ HelloWorld.dll -> /work/HelloWorld (1.3 MB, osx-arm64, .NET 11.0.0, macOS 14.0+,
 > executables for x64 work, including cross compilation: from the same assemblies, a
 > Windows executable built on Linux is byte-identical to the one built on Windows. Windows
 > on arm64 is implemented but has not been run on real hardware. macOS was verified with
-> .NET 10; with .NET 11 an application that uses cryptography or TLS does not link for
-> macOS yet, and nothing has been run. See [Status](#status) for what is and is not
-> covered.
+> .NET 10; with .NET 11 the macOS executables are built and inspected, but running them is
+> not recorded yet. See [Status](#status) for what is and is not covered.
 
 ## How it works
 
@@ -254,18 +253,16 @@ such as ASP.NET Core are published with `dotnet publish`.
 **macOS and .NET 11.** macOS was verified with the .NET 10 runtime, before this
 repository moved to .NET 11: all of the above on an Apple silicon Mac, while `osx-x64`
 executables were compared instruction by instruction with what Apple's linker produces
-from the same inputs but not run. With the .NET 11 packs, macOS executables are built and
-inspected by the tests, but none has been run, and an application that reaches the
-cryptography or TLS code of the runtime does not link: .NET 11 refers to about 165
-symbols of CryptoKit, the Swift runtime and Network.framework that the import tables do
-not list. `ina` itself and the ASP.NET Core sample are such applications. The tables have
-to be regenerated with `eng/generate-macos-abi.sh`, which needs a Mac with Xcode.
-Applications that target .NET 10 are compiled with the .NET 10 packs and are not
-affected. See [Verification](docs/Design.md#10-verification).
+from the same inputs but not run. For .NET 11 the import tables were regenerated on a Mac,
+because its runtime uses more of CryptoKit, the Swift libraries, Network.framework and
+Security.framework. With the .NET 11 packs the samples, the ASP.NET Core sample and `ina`
+itself are built for macOS on Linux and on Windows, and the tests inspect the
+executables; that they were run on a Mac is not recorded yet. See
+[Verification](docs/Design.md#10-verification).
 
 Not done yet:
 
-- **macOS with .NET 11**, as described above
+- **Running macOS executables that were built with .NET 11**, as described above
 - **Running `win-arm64` executables.** They are linked, checked structurally and their
   generated code is executed in an emulator by the tests, but no Windows on ARM64 machine
   was available
