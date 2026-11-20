@@ -1,32 +1,33 @@
 # Ina
 
-**Ina** (**I**L to **NA**tive) compiles a .NET application into a native executable
-*without a native toolchain*: no clang, gcc, `ld`, MSVC, Xcode, SDK or sysroot of the
-target system is needed, which makes cross compilation a matter of naming the target.
+**Cross-compile .NET to native executables. No native toolchain required.**
 
-Using Ina, you can cross-compile native executables for a target platform that differs from the host platform, just like Go. For example, you can:
+```console
+C:\App> dotnet publish -r linux-arm64 -p:PublishAot=true
+  App net11.0 linux-arm64 failed with 1 error(s) (0.1s)
+    …\Microsoft.NETCore.Native.Publish.targets(125,5): error Cross-OS native compilation is not supported.
+
+C:\App> dotnet publish -r linux-arm64 -p:PublishIna=true
+  App net11.0 linux-arm64 succeeded (1.3s) → bin\Release\net11.0\linux-arm64\publish\
+```
+
 - Build Linux executables on Windows.
 - Build Windows executables on macOS.
+- No clang, gcc, MSVC, Xcode, SDK or sysroot: just the .NET SDK, like `GOOS=linux go build`.
 
-Ina comes as two packages on nuget.org, released together under one version:
+**Ina** (**I**L to **NA**tive) compiles a .NET application the way NativeAOT does, and
+replaces the one step that needs a native toolchain, the link, with linkers written in C#.
 
-- **[`Ina.Sdk`](https://www.nuget.org/packages/Ina.Sdk)** — the primary, recommended way
-  to use Ina. It is an MSBuild project SDK that plugs into `dotnet publish`, where it
-  takes the place of NativeAOT's native link.
-- **[`Ina`](https://www.nuget.org/packages/Ina)** — an alternative, standalone .NET tool
-  (the `ina` command) for compiling an assembly that is already built.
-
-> **Status: proof of concept.** Linux and macOS executables for x64 and arm64 and Windows
-> executables for x64 work, including cross compilation: from the same assemblies, a
-> Windows executable built on Linux is byte-identical to the one built on Windows. Windows
-> on arm64 is implemented but has not been run on real hardware, and macOS executables for
-> x64 have not been run either. See [Status](#status) for what is and is not covered.
+> [!NOTE]
+> **Status: proof of concept.** Linux, macOS and Windows executables for x64 and arm64 can
+> be built from any host. `win-arm64` and `osx-x64` executables are built and inspected,
+> but have not been run on real hardware. See [Status](#status).
 
 ## Quick start
 
-The recommended way to use Ina is through `Ina.Sdk` and `dotnet publish`. Add `Ina.Sdk`
-to your project file and enable `PublishIna` — nothing has to be installed beforehand,
-because NuGet restores `Ina.Sdk` from nuget.org along with the project:
+Add `Ina.Sdk` to your project file and enable `PublishIna`. Nothing has to be installed
+beforehand except the .NET 11 SDK: NuGet restores
+[`Ina.Sdk`](https://www.nuget.org/packages/Ina.Sdk) along with the project.
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -42,78 +43,47 @@ because NuGet restores `Ina.Sdk` from nuget.org along with the project:
 </Project>
 ```
 
-Then publish for your target platform with `dotnet publish`:
+Then publish for any target, whatever machine you are on:
 
 ```console
-$ dotnet publish -r linux-arm64        # a project with <PublishIna>true</PublishIna>, on an x64 machine
-  App -> /work/App/bin/Release/net11.0/linux-arm64/App.dll
-  Generating native code
-  Linked App with Ina (1.4 MB, linux-arm64, glibc 2.25+)
-  App -> /work/App/bin/Release/net11.0/linux-arm64/publish/
+C:\App> dotnet publish -r linux-arm64
+Restore complete (0.4s)
+  App net11.0 linux-arm64 succeeded (1.3s) → bin\Release\net11.0\linux-arm64\publish\
+
+Build succeeded in 1.4s
 ```
 
-### Alternative: compiling an already-built assembly
+With `-tl:off`, the output also says what was linked:
+`Linked App with Ina (1.4 MB, linux-arm64, glibc 2.25+)`.
 
-Alternatively, if you already have a built assembly and have installed the standalone
-`ina` tool (see [Getting started](#getting-started)), you can compile it directly for
-Linux or Windows:
+Supported targets are `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`, `win-x64` and
+`win-arm64`. `PublishIna` implies `PublishAot`, so the rules and properties of
+[Native AOT deployment](https://learn.microsoft.com/dotnet/core/deploying/native-aot/)
+apply; Ina only takes the place of the native link.
+
+### Alternative: the `ina` command
+
+[`Ina`](https://www.nuget.org/packages/Ina) is a standalone .NET tool that compiles an
+assembly that is already built, without changing its project file:
 
 ```console
+$ dotnet tool install --global Ina
 $ dotnet build -c Release samples/HelloWorld
 $ ina samples/HelloWorld/bin/Release/net11.0/HelloWorld.dll --os linux --arch x64
 HelloWorld.dll -> /work/HelloWorld (1.3 MB, linux-x64, .NET 11.0.0, glibc 2.25+, compile 1.3s, link 0.13s)
-$ ./HelloWorld
-Hello, World!
 $ ina samples/HelloWorld/bin/Release/net11.0/HelloWorld.dll --os windows --arch x64
 HelloWorld.dll -> /work/HelloWorld.exe (1.1 MB, win-x64, .NET 11.0.0, compile 1.3s, link 0.10s)
-```
-
-The same command builds a macOS executable, on a Mac or anywhere else:
-
-```console
 $ ina samples/HelloWorld/bin/Release/net11.0/HelloWorld.dll --os macos --arch arm64
 HelloWorld.dll -> /work/HelloWorld (1.3 MB, osx-arm64, .NET 11.0.0, macOS 14.0+, compile 0.9s, link 0.14s)
 ```
 
-## Getting started
+The command knows the base class library only; applications that need a shared framework
+such as ASP.NET Core are published with `dotnet publish`.
 
-**Requirements:** the .NET 11 SDK, and access to nuget.org the first time a target is
-used (the packs are cached afterwards).
-
-The application is compiled the way `PublishAot` compiles it, so the same rules apply
-to both ways of using Ina: no runtime code generation, reflection only where the compiler
-can see it, and `System.Text.Json` through source generation (see `samples/JsonReader`).
-
-### Primary path: `Ina.Sdk` with `dotnet publish`
-
-`Ina.Sdk` is an MSBuild project SDK that is used in addition to the .NET SDK. Nothing has
-to be installed beforehand: a project refers to `Ina.Sdk` and sets `PublishIna` (as shown
-in [Quick start](#quick-start)), and NuGet restores the SDK from nuget.org along with the
-project.
-
-See [Publishing a project with `dotnet publish`](#publishing-a-project-with-dotnet-publish)
-below for full configuration details, including `global.json`, command-line options, and
-`PackageReference`.
-
-### Alternative: installing the `ina` command
-
-If you want to compile an assembly that is already built without modifying its project
-file, `ina` can be installed as a .NET tool (a package of about 680 KB), either for the
-user:
-
-```console
-$ dotnet tool install --global Ina
-$ ina --help
-```
-
-or as a local tool of a repository, which records the version in the tool manifest of
-the repository:
-
-```console
-$ dotnet new tool-manifest                       # if the repository has none yet
-$ dotnet tool install Ina
-$ dotnet ina bin/Release/net11.0/MyApp.dll
-```
+[docs/Usage.md](docs/Usage.md) is the reference for both: configuration variants
+(`global.json`, package reference), the settings that differ from a NativeAOT publish, the
+options and environment variables of `ina`, and what the executables require of the
+target system.
 
 ## How it works
 
@@ -128,8 +98,7 @@ App.dll + dependencies
    ▼
    │  2. compile          ILCompiler (RyuJIT) turns IL into an object file for the target
    ▼
-App.o   + libRuntime.WorkstationGC.a + libSystem.Native.a + ...      (Linux: ELF objects, macOS: Mach-O objects)
-App.obj + Runtime.WorkstationGC.lib + aotminipal.lib + ...           (Windows: COFF objects)
+App.o / App.obj + the static libraries of the runtime
    │
    │  3. link             Ina.Linker, three linkers written in C#, produces the executable
    ▼
@@ -138,365 +107,58 @@ App      (macOS: Mach-O, linked against libraries and frameworks of the system o
 App.exe  (Windows: PE32+, importing system DLLs and the Universal C Runtime only)
 ```
 
-With `dotnet publish`, steps 1 and 2 are those of the .NET SDK: NuGet restores the packs
-and the NativeAOT targets run ILCompiler. With the `ina` command, Ina does them itself.
-Step 3 is the same linker in both cases.
+With `dotnet publish`, steps 1 and 2 are those of the .NET SDK; with the `ina` command,
+Ina does them itself. Step 3 is the same linker in both cases.
 
 The linkers do not need the libraries of the target system either. They link against an
-*import table*: the names of the symbols that the system libraries export, generated once
-and shipped as text. For Linux that is glibc with its symbol versions, taken from the
-oldest glibc that .NET supports; for macOS the C library (libSystem) and the frameworks
-the .NET runtime uses, taken from the text-based stubs of the macOS SDK; for Windows the
-system DLLs, taken from their export tables. What a toolchain adds to every link on its
-own is generated by the linker: on Linux the startup code of `crt1.o` and the handful of
-functions from `libc_nonshared.a`; on macOS the Objective-C selector stubs, the version
-check of the compiler support library and the ad-hoc code signature without which Apple
-silicon does not run a program; on Windows the startup code, the stack probe, the stack
-protection and the thread-local storage support of the Visual C++ runtime. This is the
-same idea that lets Go cross compile out of the box.
+*import table* — the names of the symbols that the system libraries export, shipped as
+text — and generate what a toolchain would add to every link, such as the startup code
+and, for macOS, the ad-hoc code signature. This is the same idea that lets Go cross
+compile out of the box.
 
-A side effect is portability. A Linux executable built on a current distribution only
-requires the glibc 2.27 baseline (in practice symbols up to 2.25), whereas the same
-application published with NativeAOT on Ubuntu 24.04 requires glibc 2.34. A macOS
-executable is bound the way Apple's linker binds for macOS 12 and requires the system
-that its runtime was compiled for: macOS 12 with .NET 10, macOS 14 with .NET 11. A Windows
-executable depends on nothing but DLLs that are part of Windows 10 and later; it does not
-need the Visual C++ redistributable.
+A side effect is portability: a Linux executable only requires the glibc 2.27 baseline
+wherever it is built, and a Windows executable does not need the Visual C++
+redistributable.
 
 [docs/Design.md](docs/Design.md) explains the design, the alternatives that were
 considered and the internals of the linkers.
-
-## Usage in detail
-
-### Publishing a project with `dotnet publish`
-
-Publishing with `Ina.Sdk` and `dotnet publish` is the main, recommended way to use Ina.
-Add `<Sdk Name="Ina.Sdk" Version="0.1.0" />` to a project that uses `Microsoft.NET.Sdk`
-(or `Microsoft.NET.Sdk.Web`) and set `<PublishIna>true</PublishIna>`, as shown in
-[Quick start](#quick-start). You can then publish for the current machine or cross
-compile for any supported target:
-
-```console
-$ dotnet publish                       # for this machine
-$ dotnet publish -r linux-arm64        # for another architecture
-$ dotnet publish -r osx-arm64          # for another operating system
-$ dotnet publish -r win-x64            # for Windows, without Visual Studio, also on Linux or a Mac
-```
-
-The publish directory contains the executable and the content files of the project, as
-with NativeAOT. `dotnet build` and `dotnet run` keep running the application on the
-regular runtime.
-
-`PublishIna` implies `PublishAot`, and that is the whole idea: the .NET SDK does what it
-does for NativeAOT (analyzers, trimming, ILCompiler, the properties documented for
-[Native AOT deployment](https://learn.microsoft.com/dotnet/core/deploying/native-aot/))
-and Ina links the result. An application of `Microsoft.NET.Sdk.Web` is published the same
-way (see `samples/MinimalApi`).
-
-#### Configuration variants
-
-- The version of the SDK can also be given in `global.json`
-  (`"msbuild-sdks": { "Ina.Sdk": "0.1.0" }`), with `<Sdk Name="Ina.Sdk" />` in the project.
-- `PublishIna` can come from the command line instead: `dotnet publish -p:PublishIna=true`.
-  `enable` is accepted as well as `true`.
-- **As a package reference**, for example with central package management, `PublishAot`
-  has to be set too. A package takes no part in the restore of the project that refers to
-  it, so it cannot make the .NET SDK download the compiler:
-
-  ```xml
-  <PropertyGroup>
-    <PublishAot>true</PublishAot>
-    <PublishIna>true</PublishIna>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Ina.Sdk" Version="0.1.0" PrivateAssets="all" />
-  </ItemGroup>
-  ```
-
-#### Differences from a NativeAOT publish
-
-What differs from a NativeAOT publish, apart from not needing a toolchain:
-
-| Setting | With `PublishIna` |
-|---|---|
-| `RuntimeIdentifier` (`-r`) | `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`, `win-x64` or `win-arm64`, independent of the machine that publishes. Anything else is an error (INA1002). The Linux targets are tested on a `linux-x64` host, the macOS targets were tested on an `osx-arm64` and a `linux-arm64` host with .NET 10, the Windows targets were published on a `linux-x64` host; [Verification](docs/Design.md#10-verification) lists the combinations that were only built or not tried |
-| `PositionIndependentExecutable` | `false` produces a fixed-address executable for Linux, and for Windows one without base relocations. macOS has none, so there it is an error (INA1003) |
-| `StripSymbols` | `false` keeps the symbol table of Linux and macOS executables. There is no debug information, and no `.dbg` file, `.dSYM` bundle or `.pdb` file yet |
-| `NativeLibrary`, `DirectPInvoke` | Static libraries are linked into the executable, as long as they need nothing but what the import table of the target lists: the C library, for macOS the frameworks that the .NET runtime itself uses, for Windows the system DLLs that it uses and the Universal C Runtime |
-| `OutputType`, `LinkerSubsystem`, `IlcDefaultStackSize` | Honored for Windows: `WinExe` produces a graphical application. A subsystem other than `CONSOLE` or `WINDOWS`, or one with a version, is an error (INA1003) |
-| `ControlFlowGuard`, `CETCompat` | The linker does not write the tables of Control Flow Guard, so `Guard` is an error (INA1003). Executables are not marked as compatible with CET shadow stacks, whatever `CETCompat` says |
-| `LinkerArg` | Ignored with a warning (INA1005): no native linker runs |
-| `NativeLib`, `CustomNativeMain`, `StaticExecutable`, `StaticICULinking`, `StaticOpenSslLinking`, `LinkStandardCPlusPlusLibrary`, `UseSystemZlib`, `UseSystemBrotli` | Not supported (error INA1003) |
-
-#### Platform notes
-
-A macOS executable is signed ad hoc by the linker, like the ones of the `ina` command, so
-it runs on the Mac it is copied to without further steps. A Windows executable depends on
-nothing but DLLs that are part of Windows, whichever system it was published on: publishing
-for Windows needs neither Visual Studio nor the Windows SDK.
-
-### Alternative: compiling an assembly with the `ina` command
-
-If you already have a built assembly and prefer a standalone command over `dotnet publish`,
-`ina` takes the application assembly as produced by `dotnet build` (framework-dependent
-output is what you want; the dependencies next to it are picked up automatically).
-
-```
-ina <assembly> [options]
-
-  -o, --output <path>         Path of the executable [default: the assembly name in the current directory,
-                              with .exe for Windows]
-  --os <linux|macos|windows>  Target operating system [default: the system of this machine if it is one of
-                              them, otherwise linux]
-  --arch <x64|arm64>          Target architecture [default: the architecture of this machine]
-  -O, --optimize <mode>       blended, speed, size or none [default: blended]
-  --runtime-version <ver>     Version of the .NET runtime packs [default: newest patch of the app's framework]
-  --invariant-globalization   Do not depend on ICU at run time
-  --symbols                   Keep a symbol table in the executable (not for Windows)
-  --no-pie                    Produce a fixed-address executable (not for macOS)
-  --intermediate-dir <dir>    Directory for the object file and the compiler response file
-  -v, --verbose               Show phases, timings and compiler output
-```
-
-Cross compiling, for another architecture and for another operating system:
-
-```console
-$ ina bin/Release/net11.0/App.dll --arch arm64 -o App-arm64
-App.dll -> /work/App-arm64 (1.3 MB, linux-arm64, .NET 11.0.0, glibc 2.25+, compile 1.2s, link 0.12s)
-$ ina bin/Release/net11.0/App.dll --os windows
-App.dll -> /work/App.exe (1.1 MB, win-x64, .NET 11.0.0, compile 1.2s, link 0.10s)
-$ ina bin/Release/net11.0/App.dll --os macos --arch x64 -o App-mac
-App.dll -> /work/App-mac (1.3 MB, osx-x64, .NET 11.0.0, macOS 14.0+, compile 1.2s, link 0.12s)
-```
-
-**Platform notes:**
-
-- An application that was built as a graphical Windows application (`OutputType=WinExe`)
-  becomes an executable for the Windows subsystem, which starts without a console window.
-- macOS executables are ad-hoc signed by the linker, which is all macOS asks of a program
-  that is run from a terminal. An executable that is built on Windows has to be made
-  executable (`chmod +x`) after it has been copied to the Mac, because Windows file
-  systems do not record that.
-
-**Environment variables:** `INA_PACKS` (pack cache, default `~/.ina/packs`),
-`INA_NUGET_SOURCE` (NuGet v3 flat container to download packs from),
-`NUGET_PACKAGES` (the NuGet global packages folder is reused read-only).
-
-**Limitations:** The command knows the base class library only. Applications that need a
-shared framework such as ASP.NET Core are published with `dotnet publish`.
 
 ## Status
 
 | | |
 |---|---|
-| Targets | `linux-x64`, `linux-arm64` (glibc), position independent or fixed-address executables; `osx-x64`, `osx-arm64` (macOS 12 and later with .NET 10, macOS 14 and later with .NET 11); `win-x64`, `win-arm64` (Windows 10 and later), relocatable or fixed-address executables |
-| Hosts | Anywhere ILCompiler runs. Developed and tested on `linux-x64`, `win-x64` and `osx-arm64`, and before the update to .NET 11 on `linux-arm64` |
-| Frameworks | Applications that target .NET 10 or .NET 11; each is compiled with the packs of its own version. The tool and the SDK themselves run on .NET 11 |
-| Verified | Console apps, multi-assembly apps, `System.Text.Json`, exceptions, GC (workstation and server), threads and tasks, thread statics, file I/O, sockets, HTTPS, compression, crypto (OpenSSL on Linux, Apple's frameworks on macOS, the system providers on Windows). With `dotnet publish` also an ASP.NET Core minimal API |
+| Targets | `linux-x64`, `linux-arm64` (glibc); `osx-x64`, `osx-arm64`; `win-x64`, `win-arm64` (Windows 10 and later) |
+| Hosts | Anywhere ILCompiler runs. Developed and tested on `linux-x64`, `win-x64` and `osx-arm64` |
+| Frameworks | Applications that target .NET 10 or .NET 11. The tool and the SDK themselves run on .NET 11 |
+| Verified | Console apps, multi-assembly apps, `System.Text.Json`, exceptions, GC, threads and tasks, file I/O, sockets, HTTPS, compression, crypto. With `dotnet publish` also an ASP.NET Core minimal API |
 | Cross compilation | Linux to Windows and Windows to Linux, Linux to macOS, x64 to arm64. Given the same assemblies, Windows executables built on Linux and on Windows are byte-identical, and so are macOS executables built on Linux and on a Mac |
-| Self-hosting | `ina` compiles itself for Linux, macOS and Windows: the native `ina` builds applications, and rebuilding itself with it yields a byte-identical executable (compared for macOS with .NET 10 only) |
+| Self-hosting | `ina` compiles itself for Linux, macOS and Windows |
 
-**macOS and .NET 11.** macOS was first verified with the .NET 10 runtime, before this
-repository moved to .NET 11. For .NET 11 the import tables were regenerated on a Mac,
-because its runtime uses more of CryptoKit, the Swift libraries, Network.framework and
-Security.framework, and the test suite passes on an Apple silicon Mac: the samples, the
-ASP.NET Core sample and `ina` compiled by itself are built and run there. Three things
-were only done with .NET 10: the comparison with what Apple's linker produces from the
-same inputs, the comparison of executables built on Linux and on a Mac, and a larger
-program that exercises cryptography and TLS. See
-[Verification](docs/Design.md#10-verification).
+Not done yet:
 
-**Not done yet:**
-
-- **Running `osx-x64` executables.** They have been compared instruction by instruction
-  with what Apple's linker produces from the same inputs, but the Mac has no Rosetta
-- **Running `win-arm64` executables.** They are linked, checked structurally and their
-  generated code is executed in an emulator by the tests, but no Windows on ARM64 machine
-  was available
-- **Running what `dotnet publish` produced for Windows.** The executables are published on
-  Linux, inspected, and match what the `ina` command produces in their sections and imports.
-  The tests that run them need a Windows machine, such as those of the continuous
-  integration, and have not been run on one yet
-- Fully static musl executables, universal (fat) macOS binaries
-- Debug information: the compiler's DWARF output is dropped for Linux and macOS (no dSYM),
-  and no program database (PDB) is written for Windows
-- Windows security mitigations that need linker support: Control Flow Guard tables and the
-  CET shadow stack marker. The executables run without them, like a NativeAOT application
-  that opts out of both
+- Running `osx-x64` and `win-arm64` executables on real hardware
+- Debug information (DWARF, dSYM, PDB)
+- Windows mitigations that need linker support: Control Flow Guard and the CET marker
+- Fully static musl executables, universal macOS binaries
 - Native libraries (`NativeLib`) as output
-- With the `ina` command: satellite resource assemblies, shared frameworks such as ASP.NET Core,
-  and native libraries of NuGet packages. With `dotnet publish` the .NET SDK takes care of
-  these inputs: ASP.NET Core is covered by a test, satellite assemblies and a static
-  library were tried by hand
+- With the `ina` command: shared frameworks, satellite assemblies and native libraries of
+  NuGet packages (`dotnet publish` handles these)
 
-Verification gaps are listed in [docs/Design.md](docs/Design.md#10-verification).
-
-## Repository layout
-
-| Path | Content |
-|---|---|
-| `src/Ina` | The `ina` command line tool |
-| `src/Ina.Sdk` | The integration into `dotnet publish`: MSBuild project SDK and package, link task |
-| `src/Ina.Core` | Build pipeline of the command: pack resolution, ILCompiler driver, link step |
-| `src/Ina.Linker` | The ELF, Mach-O and PE linkers (x86-64 and AArch64 each) and the import tables of the system libraries |
-| `samples` | Applications used as end-to-end test subjects |
-| `tests` | Unit tests of the linkers, the pipeline and the link task; end-to-end tests over the samples |
-| `eng` | Engineering scripts: regenerating the import tables |
-| `.github` | Continuous integration and releases |
-| `docs` | [Design](docs/Design.md) and [project guidelines](docs/Guidelines.md) |
+[Verification](docs/Design.md#10-verification) in the design document lists precisely what
+was verified and how, and what was not; the [roadmap](docs/Design.md#11-roadmap) follows it.
 
 ## Development
 
-### Building and testing
-
 ```console
 $ dotnet build
-$ dotnet test          # ~470 tests, about two minutes
+$ dotnet test
 ```
 
-The tests do not use a native toolchain: object files are assembled in memory by test
-helpers, linked, and executed. The tests of the `dotnet publish` integration install
-the `Ina.Sdk` package that the build has just produced and publish the samples with a
-search path that contains nothing but `dotnet` and `sh`. Every test builds and inspects
-its executable on any host. What can be executed depends on the machine:
-
-| Executables for | are run |
-|---|---|
-| `linux-x64` | on x64 Linux; the linker tests also on Windows through WSL when a distribution is installed |
-| `linux-arm64` | on arm64 Linux, or with `qemu-aarch64` and the C library from `/usr/aarch64-linux-gnu` (Debian/Ubuntu: `apt install qemu-user libc6-arm64-cross`) |
-| `osx-arm64`, `osx-x64` | on a Mac of the same architecture; x64 ones also on Apple silicon with Rosetta |
-| `win-x64` | on x64 Windows |
-| `win-arm64` | on Windows on ARM64; everywhere else the code that the linker generates runs in an emulator that is part of the tests |
-
-Tests whose executables can not be run are skipped; the tests that inspect the structure
-of the produced images run everywhere. The first run of the end-to-end tests downloads the
-ILCompiler and runtime packs, and the runtime pack of ASP.NET Core.
-
-`.github/workflows/ci.yaml` runs the test suite on Linux and Windows machines of GitHub. It
-also builds the samples for Windows on Linux, runs them on Windows, and checks that a build
-of the same assemblies on Windows yields the same bytes; samples published for Windows with
-`dotnet publish` on Linux are run on Windows as well. The jobs on arm64 machines, which
-include running `win-arm64` executables, are enabled for public repositories; a private
-repository opts in with the repository variable `ARM64_RUNNERS=true`. No job runs on a Mac:
-macOS executables are built and inspected on the Linux and Windows machines, not run.
-
-### Trying the tool and the packages from the source tree
-
-The steps below are for trying unreleased builds from a local checkout during
-development; normal use installs released packages from nuget.org (see
-[Getting started](#getting-started)).
-
-`ina` runs straight from the build output:
-
-```console
-$ dotnet build                                   # builds ina into src/Ina/bin
-$ dotnet src/Ina/bin/Debug/net11.0/ina.dll --help
-```
-
-To try the packages as they will be released, pack them into a folder and add the folder
-as a package source. Give them a version that no release uses, such as one with a
-pre-release label: NuGet keeps every version it has restored in the global packages folder
-and uses that copy from then on, whichever source it came from.
-
-```console
-$ dotnet pack src/Ina.Sdk -c Release -o artifacts -p:PackageVersion=0.1.0-dev
-$ dotnet pack src/Ina -c Release -o artifacts -p:PackageVersion=0.1.0-dev
-$ dotnet nuget add source /path/to/Ina/artifacts --name ina
-```
-
-A project then refers to `<Sdk Name="Ina.Sdk" Version="0.1.0-dev" />`, and the tool is
-installed with `dotnet tool install Ina --version 0.1.0-dev`. For the same reason, a
-package that is packed again after a change needs another version, or the old one has to
-be removed from the global packages folder (`dotnet nuget locals global-packages --list`
-shows where it is).
-
-### Trying `Ina.Sdk` without packaging it
-
-The MSBuild files in `src/Ina.Sdk` are laid out as in the package, so a project can be
-published with them straight from the source tree. Two properties take the place of the
-reference to the package: one makes MSBuild import `Sdk.props`, the other points to the
-link task in the build output instead of the `tasks` folder of the package.
-
-```console
-$ dotnet build src/Ina.Sdk
-$ dotnet publish samples/MinimalApi -r linux-x64 \
-    -p:PublishIna=true \
-    -p:CustomAfterMicrosoftCommonProps=$PWD/src/Ina.Sdk/Sdk/Sdk.props \
-    -p:InaTasksAssembly=$PWD/src/Ina.Sdk/bin/Debug/net11.0/Ina.Sdk.dll
-$ samples/MinimalApi/bin/Release/net11.0/linux-x64/publish/MinimalApi
-```
-
-No file has to be changed for this, and the output goes to the `bin` and `obj` directories
-of the sample, which Git ignores. Build `src/Ina.Sdk` again after a change to the linker
-or the task, and stop the build nodes that MSBuild keeps running (`dotnet build-server
-shutdown`, or `MSBUILDDISABLENODEREUSE=1` from the start): a node that ran the task
-before keeps using the copy of the linker it loaded then.
-
-A project outside of the repository does the same in its project file:
-
-```xml
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <Import Project="/path/to/Ina/src/Ina.Sdk/Sdk/Sdk.props" />
-
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net11.0</TargetFramework>
-    <PublishIna>true</PublishIna>
-    <InaTasksAssembly>/path/to/Ina/src/Ina.Sdk/bin/Debug/net11.0/Ina.Sdk.dll</InaTasksAssembly>
-  </PropertyGroup>
-
-</Project>
-```
-
-This leaves out how NuGet resolves the SDK and how the package is laid out. The publish
-tests cover both with the package itself.
-
-### Releasing
-
-The ina tool (package `Ina`) and `Ina.Sdk` are released together, under the version in
-`Directory.Build.props`. Pushing a tag that names that version starts a release:
-
-```console
-$ git tag v0.1.0
-$ git push origin v0.1.0
-```
-
-`.github/workflows/release.yaml` then packs both packages in the Release configuration;
-it does not run the tests again, so tag a commit that has passed the continuous integration.
-It uploads the packages to
-nuget.org with [staged publishing](https://devblogs.microsoft.com/dotnet/nuget-staged-publishing/),
-into the staging group `ina`, and drafts a GitHub release with the packages
-attached, whose notes GitHub generates from the changes since the previous release. A tag
-that names another version fails before anything is uploaded. A version with a pre-release
-label, such as `0.2.0-preview.1`, becomes a pre-release on GitHub.
-
-nuget.org validates staged packages, but they are neither listed nor restorable until they
-are promoted. Two steps by hand complete the release:
-
-1. On nuget.org, in the packages of the account, choose **Promote group** for
-   `ina` once both packages have passed validation. This takes an account with
-   two-factor authentication. The two packages become restorable independently of each
-   other, not necessarily at the same moment.
-2. On GitHub, publish the draft release.
-
-Staged packages expire when they are not promoted, so the promotion should not be left for
-long. A package that failed validation is fixed by staging a replacement.
-
-The packages are uploaded with [Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing),
-so the repository holds no API key. It has to be set up once:
-
-- On nuget.org, a Trusted Publishing policy of the account that owns the packages, with
-  the repository owner `mayuki`, the repository `Ina`, the workflow file `release.yaml` and
-  the environment `nuget`. Restricted to staging, the policy cannot publish a package
-  without a promotion, even if the workflow were changed to try.
-- In the repository, the secret `NUGET_USER` with the name of that account on nuget.org
-  (the profile name, not the e-mail address).
-
-The upload runs in the GitHub environment `nuget`, which GitHub creates on the first run.
-Protection rules added to it, such as required reviewers or a restriction to `v*` tags,
-hold back the upload and with it the draft release.
+- [docs/Development.md](docs/Development.md) — testing, and trying the tool and the
+  packages from the source tree
+- [docs/Releasing.md](docs/Releasing.md) — how a release is made
+- [docs/Guidelines.md](docs/Guidelines.md) — repository layout and project rules
+- [docs/Design.md](docs/Design.md) — architecture
 
 ## Third-party components
 
@@ -510,18 +172,10 @@ Ina does not redistribute any of these; they are downloaded from nuget.org when 
 - The link task is compiled against [Microsoft.Build.Utilities.Core](https://www.nuget.org/packages/Microsoft.Build.Utilities.Core)
   (Microsoft, MIT); at build time MSBuild provides its own copy
 
-The import tables in `src/Ina.Linker/Abi/Tables` are interface facts; no code of any
-library is included:
-
-- `glibc-*.abi` list symbol names and symbol versions exported by the GNU C library 2.27,
-  extracted with `eng/generate-abi.sh`.
-- `macos-*.abi` list which system library of macOS exports which symbol, extracted with
-  `eng/generate-macos-abi.sh` from the text-based stubs (`.tbd`) of Apple's macOS SDK:
-  libSystem and the Objective-C runtime completely, the frameworks as far as the .NET
-  runtime refers to them. The SDK is needed to regenerate the tables, never to use Ina.
-- `windows.abi` lists which system DLL of Windows exports which name, extracted from the
-  export tables of the DLLs with `eng/GenerateWindowsAbi.cs`. Neither the Windows SDK nor
-  the Visual C++ libraries are used, at build time or to generate the table.
+The import tables in `src/Ina.Linker/Abi/Tables` are interface facts — names of symbols
+exported by glibc, by the system libraries of macOS and by the system DLLs of Windows; no
+code of any library is included. [docs/Development.md](docs/Development.md#import-tables)
+describes where they come from.
 
 ## License
 

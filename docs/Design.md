@@ -801,7 +801,8 @@ and outputs of a link, the archive reader and the import tables.
   is derived, and the minimum version of macOS for Mach-O. The summary line shows that
   requirement.
 - In `dotnet publish` the link task forwards the log of the linker to MSBuild. The summary
-  is the one line a normal build shows (`Linked App with Ina (...)`); everything else is of
+  is the one line a normal build shows (`Linked App with Ina (...)`; the terminal logger
+  hides it, `-tl:off` shows it); everything else is of
   low importance and ends up in diagnostic output and binary logs (`-bl`), which also
   record the duration of the task. `obj/.../native/<App>.ina.rsp` lists the inputs and
   options of the last link.
