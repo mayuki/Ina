@@ -28,6 +28,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- For the test that compares the version in the documentation with the version of the packages. -->
+    <AssemblyMetadata Include="RepositoryDirectory" Value="$(MSBuildThisFileDirectory)..\.." />
+    <AssemblyMetadata Include="PackageVersion" Value="$(Version)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 

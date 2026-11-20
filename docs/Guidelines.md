@@ -9,7 +9,7 @@ Projects live in `src` and `tests` under the repository root.
 	- Directory.Build.props / Directory.Packages.props
 	- dotnet-tools.json
 	- LICENSE
-	- eng (engineering scripts, e.g. regenerating the import tables of the system libraries)
+	- eng (engineering scripts, e.g. regenerating the import tables of the system libraries, setting the version)
 	- docs
 	- samples (applications used as end-to-end test subjects)
 	- src

@@ -1,11 +1,32 @@
 # Releasing Ina
 
 The ina tool (package `Ina`) and `Ina.Sdk` are released together, under the version in
-`Directory.Build.props`. Pushing a tag that names that version starts a release:
+`Directory.Build.props`.
+
+## Setting the version
+
+The documentation shows how a project refers to `Ina.Sdk`, and an SDK reference needs an
+exact version: MSBuild resolves neither a range nor a wildcard. The version is therefore
+written in the README, which is also the page of both packages on nuget.org, and in
+`docs`. `eng/SetVersion.cs` changes it there and in `Directory.Build.props` in one step:
 
 ```console
-$ git tag v0.1.0
-$ git push origin v0.1.0
+$ dotnet run eng/SetVersion.cs -- 0.2.0
+```
+
+A test (`DocumentedVersionTests`) fails when the documentation names another version than
+`Directory.Build.props`, and the release workflow checks the same before it packs.
+
+Between the merge of that change and the promotion of the packages, the README on GitHub
+names a version that cannot be restored yet, so the tag should follow soon.
+
+## Starting a release
+
+Pushing a tag that names the version starts a release:
+
+```console
+$ git tag v0.2.0
+$ git push origin v0.2.0
 ```
 
 `.github/workflows/release.yaml` then packs both packages in the Release configuration;
