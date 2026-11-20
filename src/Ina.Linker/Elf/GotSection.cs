@@ -1,7 +1,5 @@
-using Ina.Linker.Elf;
-using Ina.Linker.Symbols;
 
-namespace Ina.Linker.Output;
+namespace Ina.Linker.Elf;
 
 /// <summary>
 /// The global offset table. Besides addresses of symbols it holds the thread-local storage descriptors; those are
@@ -27,7 +25,7 @@ internal sealed class GotSection() : OutputChunk(".got", SectionType.ProgBits, S
     public ulong EntryAddress(int index) => Address + (ulong)index * 8;
 
     /// <summary>Reserves an entry holding the address of <paramref name="symbol"/>.</summary>
-    public void AddAddress(Symbol symbol, LinkContext context)
+    public void AddAddress(Symbol symbol, ElfLinkContext context)
     {
         if (symbol.GotIndex >= 0)
         {
@@ -85,7 +83,7 @@ internal sealed class GotSection() : OutputChunk(".got", SectionType.ProgBits, S
         }
     }
 
-    public override void Write(Span<byte> destination, LinkContext context)
+    public override void Write(Span<byte> destination, ElfLinkContext context)
     {
         for (var i = 0; i < _entries.Count; i++)
         {

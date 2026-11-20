@@ -1,6 +1,5 @@
 using System.Text;
 using Ina.Linker.Abi;
-using Ina.Linker.Input;
 using Ina.Linker.MachO;
 using Ina.Linker.Tests.Support;
 

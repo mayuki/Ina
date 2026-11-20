@@ -8,7 +8,7 @@ namespace Ina.Linker.Tests;
 /// general-dynamic and local-dynamic access sequences, which call <c>__tls_get_addr</c>, are therefore rewritten to
 /// plain thread pointer arithmetic, as the x86-64 ABI allows when the instructions have the canonical form.
 /// </summary>
-public class ThreadLocalRelaxationTests : LinkerTestBase
+public class ThreadLocalRelaxationTests : ElfLinkerTestBase
 {
     [Fact]
     public void GeneralDynamicSequenceIsRewrittenToThreadPointerArithmetic()

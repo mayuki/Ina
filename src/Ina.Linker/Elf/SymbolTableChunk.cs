@@ -1,7 +1,5 @@
-using Ina.Linker.Elf;
-using Ina.Linker.Symbols;
 
-namespace Ina.Linker.Output;
+namespace Ina.Linker.Elf;
 
 /// <summary>The optional static symbol table (<c>.symtab</c>) used by debuggers and profilers.</summary>
 internal sealed class SymbolTableChunk : OutputChunk
@@ -32,7 +30,7 @@ internal sealed class SymbolTableChunk : OutputChunk
         Info = (uint)(_symbols.Count(static s => s.Symbol.IsLocal) + 1);
     }
 
-    public override void Write(Span<byte> destination, LinkContext context)
+    public override void Write(Span<byte> destination, ElfLinkContext context)
     {
         for (var i = 0; i < _symbols.Count; i++)
         {

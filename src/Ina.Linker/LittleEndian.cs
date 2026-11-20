@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 
-namespace Ina.Linker.Elf;
+namespace Ina.Linker;
 
 /// <summary>Little-endian accessors. Every target Ina supports is little-endian, regardless of the host.</summary>
 internal static class LittleEndian

@@ -1,8 +1,5 @@
-using Ina.Linker.Elf;
-using Ina.Linker.Input;
-using Ina.Linker.Symbols;
 
-namespace Ina.Linker.Targets;
+namespace Ina.Linker.Elf;
 
 /// <summary>A relocation in linker-generated code, expressed against a symbol name.</summary>
 internal readonly record struct SyntheticRelocation(int Offset, uint Type, string Symbol, long Addend);
@@ -13,8 +10,8 @@ internal readonly record struct SyntheticRelocation(int Offset, uint Type, strin
 /// </summary>
 internal sealed record SyntheticFunction(string Name, byte[] Code, SyntheticRelocation[] Relocations);
 
-/// <summary>The architecture specific parts of the linker.</summary>
-internal abstract class TargetArch
+/// <summary>The architecture specific parts of the ELF linker.</summary>
+internal abstract class ElfTarget
 {
     public abstract ElfMachine Machine { get; }
 
@@ -35,28 +32,28 @@ internal abstract class TargetArch
     /// <summary>
     /// Called once before relocations are scanned, for decisions that depend on all live fragments together.
     /// </summary>
-    public virtual void Prepare(LinkContext context, IEnumerable<Fragment> liveFragments)
+    public virtual void Prepare(ElfLinkContext context, IEnumerable<Fragment> liveFragments)
     {
     }
 
     /// <summary>Decides which GOT entries, PLT stubs and dynamic relocations a relocation requires.</summary>
-    public abstract void Scan(LinkContext context, Fragment fragment, in Relocation relocation, Symbol symbol);
+    public abstract void Scan(ElfLinkContext context, Fragment fragment, in Relocation relocation, Symbol symbol);
 
     /// <summary>Patches <paramref name="data"/> (the content of <paramref name="fragment"/>) for one relocation.</summary>
-    public abstract void Apply(LinkContext context, Fragment fragment, Span<byte> data, in Relocation relocation, Symbol symbol);
+    public abstract void Apply(ElfLinkContext context, Fragment fragment, Span<byte> data, in Relocation relocation, Symbol symbol);
 
     /// <summary>
     /// Scans the relocation at <paramref name="index"/> and returns how many relocations were handled. Targets
     /// override this to recognize instruction sequences that span several relocations.
     /// </summary>
-    public virtual int ScanAt(LinkContext context, Fragment fragment, int index, Symbol symbol)
+    public virtual int ScanAt(ElfLinkContext context, Fragment fragment, int index, Symbol symbol)
     {
         Scan(context, fragment, fragment.Relocations[index], symbol);
         return 1;
     }
 
     /// <summary>Applies the relocation at <paramref name="index"/> and returns how many relocations were handled.</summary>
-    public virtual int ApplyAt(LinkContext context, Fragment fragment, Span<byte> data, int index, Symbol symbol)
+    public virtual int ApplyAt(ElfLinkContext context, Fragment fragment, Span<byte> data, int index, Symbol symbol)
     {
         Apply(context, fragment, data, fragment.Relocations[index], symbol);
         return 1;
@@ -75,20 +72,20 @@ internal abstract class TargetArch
     public abstract IReadOnlyList<SyntheticFunction> CreateCLibraryStubs();
 
     /// <summary>Offset of a TLS address from the thread pointer.</summary>
-    public abstract long ThreadPointerOffset(LinkContext context, ulong address);
+    public abstract long ThreadPointerOffset(ElfLinkContext context, ulong address);
 
     public abstract string RelocationName(uint type);
 
-    public static TargetArch Create(TargetArchitecture architecture) => architecture switch
+    public static ElfTarget Create(TargetArchitecture architecture) => architecture switch
     {
-        TargetArchitecture.X64 => new X64Target(),
-        TargetArchitecture.Arm64 => new Arm64Target(),
+        TargetArchitecture.X64 => new ElfX64Target(),
+        TargetArchitecture.Arm64 => new ElfArm64Target(),
         _ => throw new LinkerException($"unsupported target architecture: {architecture}"),
     };
 
-    protected static LinkerException Unsupported(TargetArch target, Fragment fragment, in Relocation relocation, Symbol symbol) =>
+    protected static LinkerException Unsupported(ElfTarget target, Fragment fragment, in Relocation relocation, Symbol symbol) =>
         new($"{fragment.DisplayName}: unsupported relocation {target.RelocationName(relocation.Type)} against '{symbol.Name}'");
 
-    protected static LinkerException OutOfRange(TargetArch target, Fragment fragment, in Relocation relocation, Symbol symbol) =>
+    protected static LinkerException OutOfRange(ElfTarget target, Fragment fragment, in Relocation relocation, Symbol symbol) =>
         new($"{fragment.DisplayName}+0x{relocation.Offset:x}: relocation {target.RelocationName(relocation.Type)} against '{symbol.Name}' is out of range");
 }

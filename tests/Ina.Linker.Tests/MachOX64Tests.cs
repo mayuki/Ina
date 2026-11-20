@@ -1,4 +1,3 @@
-using Ina.Linker.Elf;
 using Ina.Linker.MachO;
 using Ina.Linker.Tests.Support;
 

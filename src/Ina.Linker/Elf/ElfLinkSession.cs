@@ -1,14 +1,9 @@
-using Ina.Linker.Elf;
-using Ina.Linker.Input;
-using Ina.Linker.Output;
-using Ina.Linker.Symbols;
-using Ina.Linker.Targets;
 using Microsoft.Extensions.Logging;
 
-namespace Ina.Linker;
+namespace Ina.Linker.Elf;
 
-/// <summary>One invocation of the linker. The passes run in the order of <see cref="Run"/>.</summary>
-internal sealed partial class LinkSession
+/// <summary>One invocation of the ELF linker. The passes run in the order of <see cref="Run"/>.</summary>
+internal sealed partial class ElfLinkSession
 {
     private const string EntrySymbolName = "_start";
 
@@ -22,10 +17,10 @@ internal sealed partial class LinkSession
 
     private readonly LinkOptions _options;
     private readonly ILogger _logger;
-    private readonly TargetArch _target;
-    private readonly LinkContext _context;
+    private readonly ElfTarget _target;
+    private readonly ElfLinkContext _context;
 
-    private readonly List<ObjectFile> _objects = [];
+    private readonly List<ElfObjectFile> _objects = [];
     private readonly List<ArchiveFile> _archives = [];
     private readonly Dictionary<string, Symbol> _globals = new(StringComparer.Ordinal);
     private readonly HashSet<string> _comdatSignatures = new(StringComparer.Ordinal);
@@ -34,7 +29,7 @@ internal sealed partial class LinkSession
     private readonly HashSet<Symbol> _reportedUndefined = [];
 
     /// <summary>Hosts sections the linker creates itself, such as the storage of common symbols.</summary>
-    private readonly ObjectFile _internalObject;
+    private readonly ElfObjectFile _internalObject;
     private readonly List<InputSection> _internalSections = [];
 
     private readonly List<Symbol> _linkerSymbols = [];
@@ -42,13 +37,13 @@ internal sealed partial class LinkSession
     private readonly List<Symbol> _exports = [];
     private readonly Dictionary<string, List<InputSection>> _sectionsByName = new(StringComparer.Ordinal);
 
-    public LinkSession(LinkOptions options, ILogger logger)
+    public ElfLinkSession(LinkOptions options, ILogger logger)
     {
         _options = options;
         _logger = logger;
-        _target = TargetArch.Create(options.Architecture);
-        _context = new LinkContext(options, _target);
-        _internalObject = ObjectFile.CreateSynthetic("<ina internal>", _target.Machine);
+        _target = ElfTarget.Create(options.Architecture);
+        _context = new ElfLinkContext(options, _target);
+        _internalObject = ElfObjectFile.CreateSynthetic("<ina internal>", _target.Machine);
     }
 
     public LinkResult Run()
@@ -133,7 +128,7 @@ internal sealed partial class LinkSession
     /// <summary>Turns linker-generated functions into an object file that takes part in the link like any other.</summary>
     private void AddSyntheticObject(string name, IReadOnlyList<SyntheticFunction> functions)
     {
-        var file = ObjectFile.CreateSynthetic(name, _target.Machine);
+        var file = ElfObjectFile.CreateSynthetic(name, _target.Machine);
         var sections = new InputSection?[functions.Count + 1];
         var symbols = new List<ElfSymbol> { new(string.Empty, 0, 0, SectionIndex.Undefined, -1, 0, 0) };
 
@@ -177,17 +172,29 @@ internal sealed partial class LinkSession
             var data = input.Data.Span;
             if (ArchiveFile.IsArchive(data))
             {
-                _archives.Add(ArchiveFile.Parse(Path.GetFileName(input.Name), input.Data));
+                _archives.Add(ArchiveFile.Parse(Path.GetFileName(input.Name), input.Data, DefinedSymbols));
             }
-            else if (ObjectFile.IsElf(data))
+            else if (ElfObjectFile.IsElf(data))
             {
-                AddObject(ObjectFile.Parse(Path.GetFileName(input.Name), input.Data, _comdatSignatures.Add));
+                AddObject(ElfObjectFile.Parse(Path.GetFileName(input.Name), input.Data, _comdatSignatures.Add));
             }
             else
             {
                 throw new LinkerException($"{input.Name}: unknown file format (expected an ELF object or an ar archive)");
             }
         }
+    }
+
+    /// <summary>Lists what a member of an archive without a symbol index defines.</summary>
+    private static IEnumerable<string>? DefinedSymbols(string memberName, ReadOnlyMemory<byte> data)
+    {
+        if (!ElfObjectFile.IsElf(data.Span))
+        {
+            return null;
+        }
+
+        var file = ElfObjectFile.Parse(memberName, data, static _ => true);
+        return file.ElfSymbols.Skip(file.FirstGlobalSymbol).Where(static symbol => !symbol.IsUndefined).Select(static symbol => symbol.Name);
     }
 
     /// <summary>
@@ -227,14 +234,14 @@ internal sealed partial class LinkSession
                 if (archive.TryTakeMember(symbol.Name, out var memberName, out var memberData))
                 {
                     _logger.LogTrace("Loading {Archive}({Member}) for {Symbol}", archive.Name, memberName, symbol.Name);
-                    AddObject(ObjectFile.Parse($"{archive.Name}({memberName})", memberData, _comdatSignatures.Add));
+                    AddObject(ElfObjectFile.Parse($"{archive.Name}({memberName})", memberData, _comdatSignatures.Add));
                     break;
                 }
             }
         }
     }
 
-    private void AddObject(ObjectFile file)
+    private void AddObject(ElfObjectFile file)
     {
         if (file.Machine != _target.Machine)
         {
@@ -252,7 +259,7 @@ internal sealed partial class LinkSession
         file.Symbols = symbols;
     }
 
-    private static Symbol CreateLocalSymbol(ObjectFile file, in ElfSymbol elf)
+    private static Symbol CreateLocalSymbol(ElfObjectFile file, in ElfSymbol elf)
     {
         var symbol = new Symbol(elf.Name)
         {
@@ -278,7 +285,7 @@ internal sealed partial class LinkSession
         return symbol;
     }
 
-    private Symbol ResolveGlobalSymbol(ObjectFile file, in ElfSymbol elf)
+    private Symbol ResolveGlobalSymbol(ElfObjectFile file, in ElfSymbol elf)
     {
         if (!_globals.TryGetValue(elf.Name, out var symbol))
         {
@@ -344,7 +351,7 @@ internal sealed partial class LinkSession
         return symbol;
     }
 
-    private static void Define(Symbol symbol, ObjectFile file, in ElfSymbol elf, InputSection? section)
+    private static void Define(Symbol symbol, ElfObjectFile file, in ElfSymbol elf, InputSection? section)
     {
         symbol.File = file;
         symbol.Type = elf.Type;

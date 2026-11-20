@@ -1,7 +1,6 @@
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
-using Ina.Linker.Elf;
 using Microsoft.Extensions.Logging;
 
 namespace Ina.Linker.Pe;

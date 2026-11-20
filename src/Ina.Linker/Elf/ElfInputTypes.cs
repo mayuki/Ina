@@ -1,6 +1,5 @@
-using Ina.Linker.Elf;
 
-namespace Ina.Linker.Input;
+namespace Ina.Linker.Elf;
 
 /// <summary>A raw ELF symbol table entry together with its resolved name.</summary>
 /// <param name="Section">The index of the defining section, or -1 when the symbol is undefined, absolute or common.</param>
@@ -30,13 +29,13 @@ internal readonly record struct Relocation(ulong Offset, uint Type, uint SymbolI
 /// </summary>
 internal abstract class Fragment
 {
-    protected Fragment(ObjectFile file)
+    protected Fragment(ElfObjectFile file)
     {
         File = file;
     }
 
     /// <summary>The object file this fragment came from; relocation symbol indices are relative to it.</summary>
-    public ObjectFile File { get; }
+    public ElfObjectFile File { get; }
 
     public Relocation[] Relocations { get; set; } = [];
 

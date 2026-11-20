@@ -1,7 +1,5 @@
-using Ina.Linker.Elf;
-using Ina.Linker.Input;
 
-namespace Ina.Linker.Output;
+namespace Ina.Linker.Elf;
 
 /// <summary>An output section that concatenates input sections of the same name.</summary>
 internal sealed class OutputSection(string name, uint type, ulong flags) : OutputChunk(name, type, flags, 1)
@@ -43,7 +41,7 @@ internal sealed class OutputSection(string name, uint type, ulong flags) : Outpu
         }
     }
 
-    public override void Write(Span<byte> destination, LinkContext context)
+    public override void Write(Span<byte> destination, ElfLinkContext context)
     {
         foreach (var member in Members)
         {

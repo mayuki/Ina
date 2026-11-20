@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
-using Ina.Linker.Elf;
 using Ina.Linker.MachO;
 
 namespace Ina.Linker.Tests.Support;

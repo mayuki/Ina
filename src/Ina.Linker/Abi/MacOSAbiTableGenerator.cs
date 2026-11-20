@@ -1,5 +1,4 @@
 using System.Text;
-using Ina.Linker.Input;
 using Ina.Linker.MachO;
 
 namespace Ina.Linker.Abi;

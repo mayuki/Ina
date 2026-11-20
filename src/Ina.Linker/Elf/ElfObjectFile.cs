@@ -1,17 +1,15 @@
-using Ina.Linker.Elf;
-using Ina.Linker.Symbols;
 
-namespace Ina.Linker.Input;
+namespace Ina.Linker.Elf;
 
 /// <summary>A relocatable ELF64 little-endian object file.</summary>
-internal sealed class ObjectFile
+internal sealed class ElfObjectFile
 {
     private const int ElfHeaderSize = 64;
     private const int SectionHeaderSize = 64;
     private const int SymbolSize = 24;
     private const int RelaSize = 24;
 
-    private ObjectFile(string name, ElfMachine machine)
+    private ElfObjectFile(string name, ElfMachine machine)
     {
         Name = name;
         Machine = machine;
@@ -37,7 +35,7 @@ internal sealed class ObjectFile
     public List<EhFrameRecord> EhFrameRecords { get; } = [];
 
     /// <summary>Creates an empty object that hosts linker-synthesized sections and symbols.</summary>
-    public static ObjectFile CreateSynthetic(string name, ElfMachine machine) => new(name, machine);
+    public static ElfObjectFile CreateSynthetic(string name, ElfMachine machine) => new(name, machine);
 
     /// <summary>Sets the sections and symbols of a synthetic object.</summary>
     public void SetSyntheticContent(InputSection?[] sections, ElfSymbol[] symbols, int firstGlobalSymbol)
@@ -55,7 +53,7 @@ internal sealed class ObjectFile
     /// Called with the signature of every COMDAT group; returns false when a group with the same signature was already
     /// taken from an earlier file, in which case the group's sections are discarded.
     /// </param>
-    public static ObjectFile Parse(string name, ReadOnlyMemory<byte> memory, Func<string, bool> claimComdat)
+    public static ElfObjectFile Parse(string name, ReadOnlyMemory<byte> memory, Func<string, bool> claimComdat)
     {
         var data = memory.Span;
         if (data.Length < ElfHeaderSize || !IsElf(data))
@@ -73,7 +71,7 @@ internal sealed class ObjectFile
             throw new LinkerException($"{name}: not a relocatable object file");
         }
 
-        var file = new ObjectFile(name, (ElfMachine)LittleEndian.U16(data, 0x12));
+        var file = new ElfObjectFile(name, (ElfMachine)LittleEndian.U16(data, 0x12));
         var headers = ReadSectionHeaders(name, data);
         var sectionNames = SectionData(name, data, headers[SectionNameTableIndex(data, headers)]);
 

@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
-using Ina.Linker.Input;
+using Ina.Linker.Elf;
 using Ina.Linker.Pe;
 
 namespace Ina.Linker.Tests.Support;
@@ -133,7 +133,7 @@ internal static class ArchiveBuilder
         {
             for (var i = 0; i < members.Length; i++)
             {
-                var file = ObjectFile.Parse(members[i].Name, members[i].Data, static _ => true);
+                var file = ElfObjectFile.Parse(members[i].Name, members[i].Data, static _ => true);
                 for (var s = file.FirstGlobalSymbol; s < file.ElfSymbols.Length; s++)
                 {
                     if (!file.ElfSymbols[s].IsUndefined)

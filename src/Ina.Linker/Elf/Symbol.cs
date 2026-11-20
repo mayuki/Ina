@@ -1,8 +1,6 @@
 using Ina.Linker.Abi;
-using Ina.Linker.Elf;
-using Ina.Linker.Input;
 
-namespace Ina.Linker.Symbols;
+namespace Ina.Linker.Elf;
 
 internal enum SymbolKind
 {
@@ -32,7 +30,7 @@ internal sealed class Symbol(string name)
 
     public SymbolKind Kind { get; set; }
 
-    public ObjectFile? File { get; set; }
+    public ElfObjectFile? File { get; set; }
 
     /// <summary>The defining section when <see cref="Kind"/> is <see cref="SymbolKind.Defined"/>.</summary>
     public InputSection? Section { get; set; }

@@ -1,14 +1,12 @@
-using Ina.Linker.Elf;
-using Ina.Linker.Output;
 
-namespace Ina.Linker.Input;
+namespace Ina.Linker.Elf;
 
 /// <summary>An allocatable section of an input object file.</summary>
 internal sealed class InputSection : Fragment
 {
     private readonly ReadOnlyMemory<byte> _content;
 
-    public InputSection(ObjectFile file, int index, string name, uint type, ulong flags, ulong size, ulong alignment, ReadOnlyMemory<byte> content)
+    public InputSection(ElfObjectFile file, int index, string name, uint type, ulong flags, ulong size, ulong alignment, ReadOnlyMemory<byte> content)
         : base(file)
     {
         Index = index;

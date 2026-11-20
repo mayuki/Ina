@@ -1,13 +1,9 @@
 using System.Text;
-using Ina.Linker.Elf;
-using Ina.Linker.Input;
-using Ina.Linker.Output;
-using Ina.Linker.Symbols;
 using Microsoft.Extensions.Logging;
 
-namespace Ina.Linker;
+namespace Ina.Linker.Elf;
 
-internal sealed partial class LinkSession
+internal sealed partial class ElfLinkSession
 {
     private const int ElfHeaderSize = 64;
     private const int ProgramHeaderSize = 56;

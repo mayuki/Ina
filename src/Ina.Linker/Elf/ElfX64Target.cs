@@ -1,12 +1,9 @@
 using Ina.Linker.Abi;
-using Ina.Linker.Elf;
-using Ina.Linker.Input;
-using Ina.Linker.Symbols;
 
-namespace Ina.Linker.Targets;
+namespace Ina.Linker.Elf;
 
 /// <summary>x86-64 (System V psABI) support.</summary>
-internal sealed class X64Target : TargetArch
+internal sealed class ElfX64Target : ElfTarget
 {
     public override ElfMachine Machine => ElfMachine.X86_64;
 
@@ -22,7 +19,7 @@ internal sealed class X64Target : TargetArch
 
     public override uint Abs64Relocation => RelocX64.Abs64;
 
-    public override void Scan(LinkContext context, Fragment fragment, in Relocation relocation, Symbol symbol)
+    public override void Scan(ElfLinkContext context, Fragment fragment, in Relocation relocation, Symbol symbol)
     {
         switch (relocation.Type)
         {
@@ -93,7 +90,7 @@ internal sealed class X64Target : TargetArch
         }
     }
 
-    public override void Apply(LinkContext context, Fragment fragment, Span<byte> data, in Relocation relocation, Symbol symbol)
+    public override void Apply(ElfLinkContext context, Fragment fragment, Span<byte> data, in Relocation relocation, Symbol symbol)
     {
         var offset = (int)relocation.Offset;
         var place = fragment.Address + relocation.Offset;
@@ -195,7 +192,7 @@ internal sealed class X64Target : TargetArch
 
     private const string TlsGetAddr = "__tls_get_addr";
 
-    public override void Prepare(LinkContext context, IEnumerable<Fragment> liveFragments)
+    public override void Prepare(ElfLinkContext context, IEnumerable<Fragment> liveFragments)
     {
         // Offsets of local-dynamic accesses (DTPOFF) are relative to whatever the preceding call returned. Rewriting
         // the calls changes that base for all of them, so it is only done when every call site can be rewritten.
@@ -217,7 +214,7 @@ internal sealed class X64Target : TargetArch
         context.RelaxLocalDynamicTls = sites > 0 && canonical;
     }
 
-    public override int ScanAt(LinkContext context, Fragment fragment, int index, Symbol symbol)
+    public override int ScanAt(ElfLinkContext context, Fragment fragment, int index, Symbol symbol)
     {
         var relocation = fragment.Relocations[index];
         if (relocation.Type == RelocX64.TlsGd && IsGeneralDynamicSequence(fragment.Content, fragment, index))
@@ -234,7 +231,7 @@ internal sealed class X64Target : TargetArch
         return base.ScanAt(context, fragment, index, symbol);
     }
 
-    public override int ApplyAt(LinkContext context, Fragment fragment, Span<byte> data, int index, Symbol symbol)
+    public override int ApplyAt(ElfLinkContext context, Fragment fragment, Span<byte> data, int index, Symbol symbol)
     {
         var relocation = fragment.Relocations[index];
         var offset = (int)relocation.Offset;
@@ -411,7 +408,7 @@ internal sealed class X64Target : TargetArch
             [new SyntheticRelocation(3, RelocX64.Plt32, "__register_atfork", -4)]),
     ];
 
-    public override long ThreadPointerOffset(LinkContext context, ulong address)
+    public override long ThreadPointerOffset(ElfLinkContext context, ulong address)
     {
         // Variant II: the TLS block ends at the thread pointer, so offsets are negative.
         var blockSize = (context.TlsSize + context.TlsAlignment - 1) & ~(context.TlsAlignment - 1);
@@ -422,7 +419,7 @@ internal sealed class X64Target : TargetArch
     /// The offset a local-dynamic access adds to the result of its call: relative to the start of the TLS block
     /// when the call is kept, relative to the thread pointer when the call was rewritten.
     /// </summary>
-    private long ModuleOffset(LinkContext context, ulong address) =>
+    private long ModuleOffset(ElfLinkContext context, ulong address) =>
         context.RelaxLocalDynamicTls ? ThreadPointerOffset(context, address) : (long)(address - context.TlsStart);
 
     public override string RelocationName(uint type) => type switch

@@ -1,7 +1,5 @@
-using Ina.Linker.Input;
-using Ina.Linker.Symbols;
 
-namespace Ina.Linker.Output;
+namespace Ina.Linker.Elf;
 
 /// <summary>A relocation that the dynamic loader applies when the program starts.</summary>
 internal sealed class DynamicRelocation

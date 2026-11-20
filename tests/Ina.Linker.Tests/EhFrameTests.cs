@@ -7,7 +7,7 @@ namespace Ina.Linker.Tests;
 /// The .NET runtime unwinds managed frames through <c>.eh_frame_hdr</c>, so the table must list exactly the
 /// functions that made it into the image, sorted by address.
 /// </summary>
-public class EhFrameTests : LinkerTestBase
+public class EhFrameTests : ElfLinkerTestBase
 {
     // A CIE ("zR", pc-relative pointers) as emitted by clang for x86-64.
     private static readonly byte[] Cie =

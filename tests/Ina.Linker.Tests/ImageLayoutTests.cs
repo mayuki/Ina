@@ -5,7 +5,7 @@ using Ina.Linker.Tests.Support;
 namespace Ina.Linker.Tests;
 
 /// <summary>Checks the structure of the produced image that loaders and tools depend on.</summary>
-public class ImageLayoutTests : LinkerTestBase
+public class ImageLayoutTests : ElfLinkerTestBase
 {
     [Fact]
     public void ImageRequestsTheDynamicLoaderOfTheTargetCLibrary()

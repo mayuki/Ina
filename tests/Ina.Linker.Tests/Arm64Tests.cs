@@ -7,7 +7,7 @@ namespace Ina.Linker.Tests;
 /// AArch64 support. The encoding of every relocation is checked by decoding the patched instructions, which works
 /// on any host; in addition the programs are executed when an AArch64 machine or emulator is available.
 /// </summary>
-public class Arm64Tests : LinkerTestBase
+public class Arm64Tests : ElfLinkerTestBase
 {
     private const uint StpFrame = 0xa9bf7bfd; // stp x29, x30, [sp, #-16]!
     private const uint LdpFrame = 0xa8c17bfd; // ldp x29, x30, [sp], #16
