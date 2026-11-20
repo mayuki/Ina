@@ -7,7 +7,7 @@ namespace Ina.Linker.Tests;
 /// Some C library entry points are not exported by the shared library; a native toolchain links them statically
 /// from <c>libc_nonshared.a</c>. The linker has to supply equivalents itself.
 /// </summary>
-public class CLibraryStubTests : LinkerTestBase
+public class CLibraryStubTests : ElfLinkerTestBase
 {
     [Fact]
     public void AtexitHandlersRunWhenTheProgramExits()

@@ -1,14 +1,10 @@
-using Ina.Linker.Input;
-using Ina.Linker.Output;
-using Ina.Linker.Symbols;
-using Ina.Linker.Targets;
 
-namespace Ina.Linker;
+namespace Ina.Linker.Elf;
 
 /// <summary>State shared between the linker passes and the output chunks.</summary>
-internal sealed class LinkContext
+internal sealed class ElfLinkContext
 {
-    public LinkContext(LinkOptions options, TargetArch target)
+    public ElfLinkContext(LinkOptions options, ElfTarget target)
     {
         Options = options;
         Target = target;
@@ -18,7 +14,7 @@ internal sealed class LinkContext
 
     public LinkOptions Options { get; }
 
-    public TargetArch Target { get; }
+    public ElfTarget Target { get; }
 
     public bool IsPositionIndependent { get; }
 

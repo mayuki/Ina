@@ -3,7 +3,7 @@ using Ina.Linker.Tests.Support;
 
 namespace Ina.Linker.Tests;
 
-public class GarbageCollectionTests : LinkerTestBase
+public class GarbageCollectionTests : ElfLinkerTestBase
 {
     [Fact]
     public void UnreachableSectionsAreDiscardedTogetherWithTheirReferences()

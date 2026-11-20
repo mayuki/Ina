@@ -1,7 +1,5 @@
-using Ina.Linker.Elf;
-using Ina.Linker.Symbols;
 
-namespace Ina.Linker.Output;
+namespace Ina.Linker.Elf;
 
 /// <summary>
 /// Stubs for calls to imported functions. Every stub jumps through a GOT entry that the loader fills in at startup,
@@ -12,7 +10,7 @@ internal sealed class PltSection() : OutputChunk(".plt", SectionType.ProgBits, S
     private readonly List<Symbol> _symbols = [];
     private int _entrySize;
 
-    public void Add(Symbol symbol, LinkContext context)
+    public void Add(Symbol symbol, ElfLinkContext context)
     {
         if (symbol.PltIndex >= 0)
         {
@@ -29,7 +27,7 @@ internal sealed class PltSection() : OutputChunk(".plt", SectionType.ProgBits, S
 
     public ulong EntryAddress(Symbol symbol) => Address + (ulong)(symbol.PltIndex * _entrySize);
 
-    public override void Write(Span<byte> destination, LinkContext context)
+    public override void Write(Span<byte> destination, ElfLinkContext context)
     {
         foreach (var symbol in _symbols)
         {

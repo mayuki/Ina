@@ -1,7 +1,6 @@
 using System.Text;
 using Ina.Linker.Abi;
 using Ina.Linker.Elf;
-using Ina.Linker.Input;
 using Ina.Linker.Tests.Support;
 
 namespace Ina.Linker.Tests;
@@ -18,7 +17,7 @@ public class InputParsingTests
         builder.Relocate(text, Code.CallOperand, RelocX64.Plt32, "callee", -4);
         builder.AddSection(".comment", "not loaded"u8, flags: 0);
 
-        var file = ObjectFile.Parse("test.o", builder.Build(), static _ => true);
+        var file = ElfObjectFile.Parse("test.o", builder.Build(), static _ => true);
 
         var section = Assert.Single(file.Sections, static s => s is not null)!;
         Assert.Equal(".text", section.Name);
@@ -47,8 +46,8 @@ public class InputParsingTests
         var data = builder.Build();
         var claimed = new HashSet<string>();
 
-        var first = ObjectFile.Parse("first.o", data, claimed.Add);
-        var second = ObjectFile.Parse("second.o", data, claimed.Add);
+        var first = ElfObjectFile.Parse("first.o", data, claimed.Add);
+        var second = ElfObjectFile.Parse("second.o", data, claimed.Add);
 
         Assert.Contains(first.Sections, static s => s?.Name == ".text.inline");
         Assert.DoesNotContain(second.Sections, static s => s?.Name == ".text.inline");
@@ -59,20 +58,23 @@ public class InputParsingTests
     [InlineData("\u007fELF but far too short")]
     public void MalformedObjectsAreRejected(string content)
     {
-        Assert.Throws<LinkerException>(() => ObjectFile.Parse("bad.o", Encoding.Latin1.GetBytes(content), static _ => true));
+        Assert.Throws<LinkerException>(() => ElfObjectFile.Parse("bad.o", Encoding.Latin1.GetBytes(content), static _ => true));
     }
 
     [Fact]
     public void ArchiveMemberIsHandedOutOnlyOnce()
     {
-        var archive = ArchiveFile.Parse("lib.a", ArchiveBuilder.Build(
-            withSymbolTable: true,
-            ("first.o", Code.Function("alpha", Code.Return(1))),
-            ("second_with_a_very_long_file_name.o", Code.Function("beta", Code.Return(2)))));
+        var archive = ArchiveFile.Parse(
+            "lib.a",
+            ArchiveBuilder.Build(
+                withSymbolTable: true,
+                ("first.o", Code.Function("alpha", Code.Return(1))),
+                ("second_with_a_very_long_file_name.o", Code.Function("beta", Code.Return(2)))),
+            static (_, _) => null);
 
         Assert.True(archive.TryTakeMember("beta", out var name, out var data));
         Assert.Equal("second_with_a_very_long_file_name.o", name);
-        Assert.True(ObjectFile.IsElf(data.Span));
+        Assert.True(ElfObjectFile.IsElf(data.Span));
 
         Assert.False(archive.TryTakeMember("beta", out _, out _));
         Assert.False(archive.TryTakeMember("gamma", out _, out _));

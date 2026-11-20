@@ -77,7 +77,7 @@ public static class AbiTableGenerator
 
     private static List<(string Name, string? Version, ImportedSymbolKind Kind)> ReadExports(string soName, ReadOnlySpan<byte> data)
     {
-        if (!Input.ObjectFile.IsElf(data) || data[4] != 2 || data[5] != 1 || LittleEndian.U16(data, 0x10) != ElfType.Dyn)
+        if (!ElfObjectFile.IsElf(data) || data[4] != 2 || data[5] != 1 || LittleEndian.U16(data, 0x10) != ElfType.Dyn)
         {
             throw new LinkerException($"{soName}: not a 64-bit little-endian ELF shared object");
         }

@@ -4,7 +4,7 @@ using Ina.Linker.Tests.Support;
 namespace Ina.Linker.Tests;
 
 /// <summary>Links small programs and runs them: the linked image has to work, not just look right.</summary>
-public class ExecutableTests : LinkerTestBase
+public class ExecutableTests : ElfLinkerTestBase
 {
     [Fact]
     public void ReturnValueOfMainBecomesTheExitCode()

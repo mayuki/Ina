@@ -1,5 +1,4 @@
 using System.Text;
-using Ina.Linker.Elf;
 using Ina.Linker.Pe;
 using Ina.Linker.Tests.Support;
 

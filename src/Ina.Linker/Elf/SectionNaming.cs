@@ -1,4 +1,4 @@
-namespace Ina.Linker;
+namespace Ina.Linker.Elf;
 
 /// <summary>Rules that map input section names to output sections, mirroring the default GNU linker script.</summary>
 internal static class SectionNaming

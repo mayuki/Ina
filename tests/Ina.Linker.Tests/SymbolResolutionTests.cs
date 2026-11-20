@@ -3,7 +3,7 @@ using Ina.Linker.Tests.Support;
 
 namespace Ina.Linker.Tests;
 
-public class SymbolResolutionTests : LinkerTestBase
+public class SymbolResolutionTests : ElfLinkerTestBase
 {
     [Fact]
     public void PullsArchiveMembersThatDefineUndefinedSymbols()

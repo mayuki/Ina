@@ -1,6 +1,5 @@
-using Ina.Linker.Output;
 
-namespace Ina.Linker.Input;
+namespace Ina.Linker.Elf;
 
 /// <summary>
 /// One CIE or FDE of an input <c>.eh_frame</c> section. Records are handled individually so that FDEs describing
@@ -10,7 +9,7 @@ internal sealed class EhFrameRecord : Fragment
 {
     private readonly ReadOnlyMemory<byte> _content;
 
-    public EhFrameRecord(ObjectFile file, ReadOnlyMemory<byte> content, bool isCie)
+    public EhFrameRecord(ElfObjectFile file, ReadOnlyMemory<byte> content, bool isCie)
         : base(file)
     {
         _content = content;

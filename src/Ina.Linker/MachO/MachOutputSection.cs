@@ -1,4 +1,3 @@
-using Ina.Linker.Elf;
 
 namespace Ina.Linker.MachO;
 

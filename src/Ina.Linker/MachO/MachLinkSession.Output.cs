@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using Ina.Linker.Elf;
 
 namespace Ina.Linker.MachO;
 

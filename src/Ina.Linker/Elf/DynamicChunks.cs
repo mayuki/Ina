@@ -1,7 +1,5 @@
-using Ina.Linker.Elf;
-using Ina.Linker.Symbols;
 
-namespace Ina.Linker.Output;
+namespace Ina.Linker.Elf;
 
 /// <summary>The dynamic symbol table: imported symbols plus the few symbols the executable exports.</summary>
 internal sealed class DynamicSymbolTable : OutputChunk
@@ -39,7 +37,7 @@ internal sealed class DynamicSymbolTable : OutputChunk
         Size = (ulong)(Count * EntryLength);
     }
 
-    public override void Write(Span<byte> destination, LinkContext context)
+    public override void Write(Span<byte> destination, ElfLinkContext context)
     {
         for (var i = 0; i < _symbols.Count; i++)
         {
@@ -87,7 +85,7 @@ internal sealed class HashChunk : OutputChunk
 
     private int BucketCount => Math.Max(1, _symbols.Count / 2);
 
-    public override void Write(Span<byte> destination, LinkContext context)
+    public override void Write(Span<byte> destination, ElfLinkContext context)
     {
         var bucketCount = BucketCount;
         LittleEndian.U32(destination, 0, (uint)bucketCount);
@@ -243,7 +241,7 @@ internal sealed class VersionTables
             EntrySize = entrySize;
         }
 
-        public override void Write(Span<byte> destination, LinkContext context) => writer(destination);
+        public override void Write(Span<byte> destination, ElfLinkContext context) => writer(destination);
     }
 }
 
@@ -270,7 +268,7 @@ internal sealed class RelaDynChunk : OutputChunk
         Size = (ulong)(relocations.Count * EntryLength);
     }
 
-    public override void Write(Span<byte> destination, LinkContext context)
+    public override void Write(Span<byte> destination, ElfLinkContext context)
     {
         var relativeType = context.Target.RelativeRelocation;
         var ordered = _relocations
@@ -312,7 +310,7 @@ internal sealed class DynamicChunk : OutputChunk
 
     public void Add(long tag, ulong value) => Add(tag, () => value);
 
-    public override void Write(Span<byte> destination, LinkContext context)
+    public override void Write(Span<byte> destination, ElfLinkContext context)
     {
         for (var i = 0; i < _entries.Count; i++)
         {

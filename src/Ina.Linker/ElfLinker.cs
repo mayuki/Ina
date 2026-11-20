@@ -1,3 +1,4 @@
+using Ina.Linker.Elf;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -12,6 +13,6 @@ public static class ElfLinker
     public static LinkResult Link(LinkOptions options, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(options);
-        return new LinkSession(options, logger ?? NullLogger.Instance).Run();
+        return new ElfLinkSession(options, logger ?? NullLogger.Instance).Run();
     }
 }

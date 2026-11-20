@@ -1,7 +1,5 @@
-using Ina.Linker.Elf;
-using Ina.Linker.Input;
 
-namespace Ina.Linker.Output;
+namespace Ina.Linker.Elf;
 
 /// <summary>The output <c>.eh_frame</c>: the surviving CIE and FDE records of all inputs, followed by a terminator.</summary>
 internal sealed class EhFrameChunk() : OutputChunk(".eh_frame", SectionType.ProgBits, SectionFlags.Alloc, 8)
@@ -20,7 +18,7 @@ internal sealed class EhFrameChunk() : OutputChunk(".eh_frame", SectionType.Prog
         Size = record.Offset + (ulong)record.Size + TerminatorSize;
     }
 
-    public override void Write(Span<byte> destination, LinkContext context)
+    public override void Write(Span<byte> destination, ElfLinkContext context)
     {
         foreach (var record in _records)
         {
@@ -57,7 +55,7 @@ internal sealed class EhFrameHeaderChunk(EhFrameChunk frames) : OutputChunk(".eh
         Size = (ulong)(12 + _fdes.Count * 8);
     }
 
-    public override void Write(Span<byte> destination, LinkContext context)
+    public override void Write(Span<byte> destination, ElfLinkContext context)
     {
         destination[0] = 1; // version
         destination[1] = EncodingPcRelSData4; // encoding of the .eh_frame pointer

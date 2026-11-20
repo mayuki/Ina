@@ -127,23 +127,30 @@ The command line depends on two things besides the application:
   "dehydrated" form unless the build optimizes for size. This is what the official build
   does as well.
 
-**Linking.** See the next three sections: one linker per object format.
+**Linking.** See the next three sections: one linker per object format. Each linker has
+a folder and a namespace of its own in `src/Ina.Linker` (`Elf`, `MachO`, `Pe`), and they
+have the same shape: a session whose `Run` calls the passes in order (`ElfLinkSession`,
+`MachLinkSession`, `PeLinkSession`), a context that the passes and the generated parts of
+the image share, and a subclass of a target class per architecture. The root of the
+project holds what they share: the entry points (`ElfLinker`, `MachOLinker`, `PeLinker`),
+the options and the result of a link, the archive reader (`ArchiveFile`) and the
+little-endian accessors. The import tables and their generators live in `Abi`.
 
 ## 3. The ELF linker (Linux)
 
-`ElfLinker` links ELF relocatable objects and static libraries into a dynamically linked
-executable for x86-64 or AArch64. It is not a general purpose replacement for `ld`; it
-implements what a NativeAOT link needs, and it reports anything else as an error instead
-of producing a questionable image.
+`ElfLinker` (`src/Ina.Linker/Elf`) links ELF relocatable objects and static libraries into
+a dynamically linked executable for x86-64 or AArch64. It is not a general purpose
+replacement for `ld`; it implements what a NativeAOT link needs, and it reports anything
+else as an error instead of producing a questionable image.
 
 ### 3.1 Passes
 
-The passes are the methods called by `LinkSession.Run`, in this order:
+The passes are the methods called by `ElfLinkSession.Run`, in this order:
 
 1. **Startup object.** A synthetic object with the process entry point `_start` is added
    (see 3.3).
-2. **Load inputs.** Objects are parsed (`ObjectFile`); archives are indexed (`ArchiveFile`).
-   COMDAT groups are deduplicated while parsing: the first group with a signature wins.
+2. **Load inputs.** Objects are parsed (`ElfObjectFile`); archives are indexed
+   (`ArchiveFile`). COMDAT groups are deduplicated while parsing: the first group with a signature wins.
    Sections that are not loaded at run time (debug information, comments) are dropped.
 3. **Resolve symbols.** Strong definitions override weak ones and tentative (common)
    ones; two strong definitions are an error. Archive members are loaded only when they
@@ -230,9 +237,9 @@ from the thread pointer. The linker uses this in two ways:
 
 - The access sequences that call the loader are rewritten to thread pointer arithmetic
   when they have the canonical form defined by the ABI: general-dynamic and local-dynamic
-  on x86-64 (`X64Target`), TLS descriptors on AArch64 (`Arm64Target`). ILCompiler emits
-  these for managed thread statics, and the allocation helpers of the runtime use them,
-  so this matters for performance.
+  on x86-64 (`ElfX64Target`), TLS descriptors on AArch64 (`ElfArm64Target`). ILCompiler
+  emits these for managed thread statics, and the allocation helpers of the runtime use
+  them, so this matters for performance.
 - Sequences in any other form keep working: their GOT entries are filled in statically
   with module 1 and the offset, without dynamic relocations.
 
@@ -764,7 +771,7 @@ not imported; there the check only runs before the publish steps.)
 
 ## 7. Adding a target
 
-For the ELF linker an architecture is a subclass of `TargetArch`: relocation scan and
+For the ELF linker an architecture is a subclass of `ElfTarget`: relocation scan and
 application, the PLT stub, the entry point and C library stubs as machine code, and the
 thread pointer offset formula. A C library is an import table.
 

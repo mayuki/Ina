@@ -1,7 +1,6 @@
 using System.Text;
-using Ina.Linker.Elf;
 
-namespace Ina.Linker.Output;
+namespace Ina.Linker.Elf;
 
 /// <summary>A chunk whose bytes are known up front.</summary>
 internal sealed class DataChunk : OutputChunk
@@ -15,7 +14,7 @@ internal sealed class DataChunk : OutputChunk
         Size = (ulong)data.Length;
     }
 
-    public override void Write(Span<byte> destination, LinkContext context) => _data.CopyTo(destination);
+    public override void Write(Span<byte> destination, ElfLinkContext context) => _data.CopyTo(destination);
 }
 
 /// <summary>A string table (<c>.dynstr</c>, <c>.strtab</c>, <c>.shstrtab</c>).</summary>
@@ -48,5 +47,5 @@ internal sealed class StringTableChunk : OutputChunk
         return offset;
     }
 
-    public override void Write(Span<byte> destination, LinkContext context) => _data.GetBuffer().AsSpan(0, (int)_data.Length).CopyTo(destination);
+    public override void Write(Span<byte> destination, ElfLinkContext context) => _data.GetBuffer().AsSpan(0, (int)_data.Length).CopyTo(destination);
 }

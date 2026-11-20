@@ -1,12 +1,9 @@
 using Ina.Linker.Abi;
-using Ina.Linker.Elf;
-using Ina.Linker.Input;
-using Ina.Linker.Symbols;
 
-namespace Ina.Linker.Targets;
+namespace Ina.Linker.Elf;
 
 /// <summary>AArch64 (Arm 64-bit, little-endian) support.</summary>
-internal sealed class Arm64Target : TargetArch
+internal sealed class ElfArm64Target : ElfTarget
 {
     private const uint Nop = 0xd503201f;
 
@@ -25,7 +22,7 @@ internal sealed class Arm64Target : TargetArch
 
     public override uint Abs64Relocation => RelocArm64.Abs64;
 
-    public override void Scan(LinkContext context, Fragment fragment, in Relocation relocation, Symbol symbol)
+    public override void Scan(ElfLinkContext context, Fragment fragment, in Relocation relocation, Symbol symbol)
     {
         switch (relocation.Type)
         {
@@ -98,7 +95,7 @@ internal sealed class Arm64Target : TargetArch
         }
     }
 
-    public override void Apply(LinkContext context, Fragment fragment, Span<byte> data, in Relocation relocation, Symbol symbol)
+    public override void Apply(ElfLinkContext context, Fragment fragment, Span<byte> data, in Relocation relocation, Symbol symbol)
     {
         var offset = (int)relocation.Offset;
         var place = fragment.Address + relocation.Offset;
@@ -366,7 +363,7 @@ internal sealed class Arm64Target : TargetArch
             []),
     ];
 
-    public override long ThreadPointerOffset(LinkContext context, ulong address)
+    public override long ThreadPointerOffset(ElfLinkContext context, ulong address)
     {
         // Variant I: the thread pointer points at a 16 byte control block that is followed by the TLS block.
         var controlBlock = (16 + context.TlsAlignment - 1) & ~(context.TlsAlignment - 1);
@@ -421,7 +418,7 @@ internal sealed class Arm64Target : TargetArch
         }
     }
 
-    private uint CheckedTlsOffset(LinkContext context, Symbol symbol, long addend, Fragment fragment, in Relocation relocation)
+    private uint CheckedTlsOffset(ElfLinkContext context, Symbol symbol, long addend, Fragment fragment, in Relocation relocation)
     {
         var offset = ThreadPointerOffset(context, symbol.Address) + addend;
         if (offset is < 0 or > uint.MaxValue)

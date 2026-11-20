@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 
-namespace Ina.Linker.Input;
+namespace Ina.Linker;
 
 /// <summary>
 /// A static library in the <c>ar</c> format, in any of its dialects: System V / GNU (used for ELF), BSD (used by
@@ -29,9 +29,6 @@ internal sealed class ArchiveFile
     public string Name { get; }
 
     public static bool IsArchive(ReadOnlySpan<byte> data) => data.StartsWith(Magic);
-
-    /// <summary>Parses an archive of ELF objects.</summary>
-    public static ArchiveFile Parse(string name, ReadOnlyMemory<byte> data) => Parse(name, data, ElfDefinedSymbols);
 
     /// <summary>Parses an archive.</summary>
     /// <param name="definedSymbols">
@@ -80,17 +77,6 @@ internal sealed class ArchiveFile
 
             offset = NextMemberOffset(offset, size);
         }
-    }
-
-    private static IEnumerable<string>? ElfDefinedSymbols(string memberName, ReadOnlyMemory<byte> data)
-    {
-        if (!ObjectFile.IsElf(data.Span))
-        {
-            return null;
-        }
-
-        var file = ObjectFile.Parse(memberName, data, static _ => true);
-        return file.ElfSymbols.Skip(file.FirstGlobalSymbol).Where(static symbol => !symbol.IsUndefined).Select(static symbol => symbol.Name);
     }
 
     /// <summary>The symbol index and the table of long names are members with reserved names.</summary>

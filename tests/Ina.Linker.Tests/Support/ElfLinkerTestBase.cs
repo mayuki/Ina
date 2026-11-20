@@ -4,8 +4,8 @@ using Ina.Linker.Abi;
 
 namespace Ina.Linker.Tests.Support;
 
-/// <summary>Common plumbing for tests that link objects and optionally run the result.</summary>
-public abstract class LinkerTestBase : IDisposable
+/// <summary>Common plumbing for tests that link ELF objects and optionally run the result.</summary>
+public abstract class ElfLinkerTestBase : IDisposable
 {
     private const string Arm64Emulator = "qemu-aarch64";
     private const string Arm64SystemRoot = "/usr/aarch64-linux-gnu";
@@ -13,7 +13,7 @@ public abstract class LinkerTestBase : IDisposable
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "ina-tests", Guid.NewGuid().ToString("N"));
     private int _outputs;
 
-    protected LinkerTestBase()
+    protected ElfLinkerTestBase()
     {
         Directory.CreateDirectory(_directory);
     }
