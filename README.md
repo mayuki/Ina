@@ -20,8 +20,8 @@ replaces the one step that needs a native toolchain, the link, with linkers writ
 
 > [!NOTE]
 > **Status: proof of concept.** Linux, macOS and Windows executables for x64 and arm64 can
-> be built from any host. `win-arm64` and `osx-x64` executables are built and inspected,
-> but have not been run on real hardware. See [Status](#status).
+> be built from any host. `osx-x64` executables are built and inspected, but have not been
+> run on real hardware. See [Status](#status).
 
 ## Quick start
 
@@ -136,7 +136,7 @@ considered and the internals of the linkers.
 
 Not done yet:
 
-- Running `osx-x64` and `win-arm64` executables on real hardware
+- Running `osx-x64` executables on real hardware
 - Debug information (DWARF, dSYM, PDB)
 - Windows mitigations that need linker support: Control Flow Guard and the CET marker
 - Fully static musl executables, universal macOS binaries

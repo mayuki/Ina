@@ -858,6 +858,12 @@ What has been verified, and how:
   startup internals of the static C runtime on one side and `memcpy`, `memmove`,
   `memset`, `_purecall` and `__C_specific_handler` (imported instead of linked
   statically) on the other.
+- `win-arm64`: executables built on an x64 Windows machine run on Windows on ARM64, on
+  real hardware. Before that, their headers, the function table and the unwind data of
+  the generated functions were inspected with the tools of Visual C++, the generated code
+  was disassembled and runs in the emulator of the tests, and the imports were checked
+  against the arm64 import libraries of the Windows SDK (except for the five functions
+  that come from the Universal C Runtime instead of the static C runtime).
 - Building for Windows on Linux: the complete test suite passes on Linux from a clean
   checkout of the repository, which includes linking the samples for `win-x64` and
   `win-arm64`. The samples built there for `win-x64` - by the managed tool, and by the
@@ -1001,15 +1007,11 @@ Not verified:
   been started yet. The tests that run the executables need a Windows machine of their
   architecture, which the continuous integration has for x64 (and for arm64 when opted in);
   publishing on a Windows host has not been tried either.
-- **`win-arm64` at run time.** The executables link. Their headers, the function table
-  and the unwind data of the generated functions were inspected with the tools of
-  Visual C++, the generated code was disassembled and runs in the emulator of the tests,
-  and the imports were checked against the arm64 import libraries of the Windows SDK
-  (except for the five functions that come from the Universal C Runtime instead of the
-  static C runtime). No executable has been started on Windows on ARM64. The continuous
-  integration has jobs that run the suite on such a machine, and the executables that the
-  Linux machine built; arm64 machines are opt-in for a private repository (the repository
-  variable `ARM64_RUNNERS`), and they have not been enabled.
+- **The test suite on Windows on ARM64.** `win-arm64` executables were run by hand, as
+  described above, not by the tests. The continuous integration has jobs that run the
+  suite on such a machine, and the executables that the Linux machine built; arm64
+  machines are opt-in for a private repository (the repository variable `ARM64_RUNNERS`),
+  and they have not been enabled.
 - **Running `osx-x64` executables.** The Mac had no Rosetta, so x64 executables were
   compared with Apple's linker as described above but never run. The x64 tests execute on
   an Intel Mac or a Mac with Rosetta and are skipped elsewhere.
@@ -1024,7 +1026,7 @@ Not verified:
   apart from choosing the ILCompiler package, and `linux-arm64` was a host of the build
   with .NET 10, as described above. With .NET 11 the hosts were `linux-x64`, `win-x64`
   and `osx-arm64`.
-- **Real arm64 hardware**, in particular Linux kernels with 16 KiB or 64 KiB pages (the
+- **Linux on real arm64 hardware**, in particular kernels with 16 KiB or 64 KiB pages (the
   image is laid out for 64 KiB).
 - **Graphical Windows applications.** The subsystem is taken from the application, but
   no application with a user interface has been compiled; the shared frameworks that
@@ -1046,9 +1048,8 @@ Roughly in order of expected value:
 
 1. **A Mac in the continuous integration**, so that macOS executables are run for every
    change and not only when somebody runs the suite on a Mac.
-2. **Windows on ARM64 on real hardware**, and the Windows mitigations that need the
-   linker: the Control Flow Guard tables, the CET marker, a `__GSHandlerCheck` that
-   validates the cookie.
+2. **The Windows mitigations that need the linker**: the Control Flow Guard tables, the
+   CET marker, a `__GSHandlerCheck` that validates the cookie.
 3. **Fully static Linux executables** against musl, for scratch containers. The linker
    already resolves everything statically except the C library; this needs the musl
    runtime pack and musl's `libc.a` as an input.
