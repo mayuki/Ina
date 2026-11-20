@@ -177,6 +177,12 @@ exported by glibc, by the system libraries of macOS and by the system DLLs of Wi
 code of any library is included. [docs/Development.md](docs/Development.md#import-tables)
 describes where they come from.
 
+## AI usage and policy
+
+Most of the code in this project is designed and implemented with AI coding agents
+(Claude Code, Codex, GitHub Copilot). The direction of the project is still decided by
+the repository owner, who chooses what goes in and what does not.
+
 ## License
 
 Ina is licensed under the [MIT License](LICENSE).
