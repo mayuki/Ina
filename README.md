@@ -32,7 +32,7 @@ beforehand except the .NET 11 SDK: NuGet restores
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <Sdk Name="Ina.Sdk" Version="0.1.0" />
+  <Sdk Name="Ina.Sdk" Version="0.2.0" />
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>

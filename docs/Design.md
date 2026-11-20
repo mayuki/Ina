@@ -570,7 +570,7 @@ with `PublishIna`:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
-  <Sdk Name="Ina.Sdk" Version="0.1.0" />
+  <Sdk Name="Ina.Sdk" Version="0.2.0" />
   <PropertyGroup>
     <PublishIna>true</PublishIna>
   </PropertyGroup>

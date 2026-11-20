@@ -11,7 +11,7 @@
       The version of the packages (the ina tool and Ina.Sdk), which are released together. Pushing the tag
       v$(Version) releases them, see .github/workflows/release.yaml.
     -->
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
   </PropertyGroup>
 
   <!-- The metadata of the packages. The repository URL and commit come from Source Link. -->

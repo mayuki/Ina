@@ -11,13 +11,13 @@ the compiler can see it, and `System.Text.Json` through source generation (see
 
 ## Publishing a project with `dotnet publish`
 
-Add `<Sdk Name="Ina.Sdk" Version="0.1.0" />` to a project that uses `Microsoft.NET.Sdk`
+Add `<Sdk Name="Ina.Sdk" Version="0.2.0" />` to a project that uses `Microsoft.NET.Sdk`
 (or `Microsoft.NET.Sdk.Web`) and set `<PublishIna>true</PublishIna>`:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <Sdk Name="Ina.Sdk" Version="0.1.0" />
+  <Sdk Name="Ina.Sdk" Version="0.2.0" />
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -51,7 +51,7 @@ way (see `samples/MinimalApi`).
 ### Configuration variants
 
 - The version of the SDK can also be given in `global.json`
-  (`"msbuild-sdks": { "Ina.Sdk": "0.1.0" }`), with `<Sdk Name="Ina.Sdk" />` in the project.
+  (`"msbuild-sdks": { "Ina.Sdk": "0.2.0" }`), with `<Sdk Name="Ina.Sdk" />` in the project.
 - `PublishIna` can come from the command line instead: `dotnet publish -p:PublishIna=true`.
   `enable` is accepted as well as `true`.
 - **As a package reference**, for example with central package management, `PublishAot`
@@ -65,7 +65,7 @@ way (see `samples/MinimalApi`).
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Ina.Sdk" Version="0.1.0" PrivateAssets="all" />
+    <PackageReference Include="Ina.Sdk" Version="0.2.0" PrivateAssets="all" />
   </ItemGroup>
   ```
 
