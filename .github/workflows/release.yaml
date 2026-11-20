@@ -26,11 +26,7 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  # Nothing is published from a commit that does not pass what every change has to pass.
-  ci:
-    name: CI
-    uses: ./.github/workflows/ci.yaml
-
+  # The tests are not run again: the tagged commit is expected to have passed CI on its way to main.
   pack:
     name: Pack
     runs-on: ubuntu-latest
@@ -42,7 +38,7 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
-      # Runs alongside the CI jobs, so that a tag that names the wrong version fails within minutes.
+      # Comes first, so that a tag that names the wrong version fails before anything is built.
       - name: Check the tag against the version of the packages
         id: version
         run: |
@@ -70,7 +66,7 @@ jobs:
 
   stage:
     name: Stage on nuget.org
-    needs: [ci, pack]
+    needs: pack
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The Trusted Publishing policy on nuget.org names this environment, and protection rules can be added to it.
@@ -100,11 +96,10 @@ jobs:
       - name: Stage the packages
         env:
           NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
-          VERSION: ${{ needs.pack.outputs.version }}
         run: |
           set -euo pipefail
           for package in artifacts/*.nupkg; do
-            dotnet package stage push "$package" --source https://api.nuget.org/v3/index.json --group "ina-$VERSION"
+            dotnet package stage push "$package" --source https://api.nuget.org/v3/index.json --group ina
           done
 
   release:

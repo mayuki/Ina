@@ -463,10 +463,11 @@ $ git tag v0.1.0
 $ git push origin v0.1.0
 ```
 
-`.github/workflows/release.yaml` then runs the jobs of the continuous integration on the
-tagged commit and packs both packages in the Release configuration. It uploads them to
+`.github/workflows/release.yaml` then packs both packages in the Release configuration;
+it does not run the tests again, so tag a commit that has passed the continuous integration.
+It uploads the packages to
 nuget.org with [staged publishing](https://devblogs.microsoft.com/dotnet/nuget-staged-publishing/),
-into the staging group `ina-<version>`, and drafts a GitHub release with the packages
+into the staging group `ina`, and drafts a GitHub release with the packages
 attached, whose notes GitHub generates from the changes since the previous release. A tag
 that names another version fails before anything is uploaded. A version with a pre-release
 label, such as `0.2.0-preview.1`, becomes a pre-release on GitHub.
@@ -475,7 +476,7 @@ nuget.org validates staged packages, but they are neither listed nor restorable 
 are promoted. Two steps by hand complete the release:
 
 1. On nuget.org, in the packages of the account, choose **Promote group** for
-   `ina-<version>` once both packages have passed validation. This takes an account with
+   `ina` once both packages have passed validation. This takes an account with
    two-factor authentication. The two packages become restorable independently of each
    other, not necessarily at the same moment.
 2. On GitHub, publish the draft release.

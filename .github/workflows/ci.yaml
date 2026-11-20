@@ -15,8 +15,6 @@ on:
     paths-ignore:
       - '**/*.md'
   workflow_dispatch:
-  # Called by release.yaml, which publishes only what passes the same checks.
-  workflow_call:
 
 permissions:
   contents: read
@@ -28,8 +26,8 @@ concurrency:
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
-  # Where "dotnet build" puts the tool and the samples.
-  OUTPUT: bin/Debug/net11.0
+  # Where "dotnet build -c Release" puts the tool and the samples.
+  OUTPUT: bin/Release/net11.0
 
 jobs:
   test:
@@ -49,8 +47,8 @@ jobs:
       - name: Install the arm64 emulator
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y qemu-user libc6-arm64-cross
-      - run: dotnet build
-      - run: dotnet test
+      - run: dotnet build -c Release
+      - run: dotnet test -c Release --no-build
 
   # GitHub provides arm64 machines to public repositories; a private repository opts in with the repository
   # variable ARM64_RUNNERS=true when its plan includes them. This is where win-arm64 executables are run.
@@ -68,8 +66,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - run: dotnet build
-      - run: dotnet test
+      - run: dotnet build -c Release
+      - run: dotnet test -c Release --no-build
 
   cross-build:
     name: Build Windows executables on Linux
@@ -80,7 +78,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - run: dotnet build
+      - run: dotnet build -c Release
       - name: Compile the samples for Windows
         run: |
           set -euo pipefail
@@ -139,7 +137,7 @@ jobs:
       - name: Build the same assemblies on Windows and compare
         shell: pwsh
         run: |
-          dotnet build src/Ina
+          dotnet build src/Ina -c Release
           if ($LASTEXITCODE -ne 0) { throw "the tool did not build" }
           foreach ($app in "HelloWorld", "RuntimeTour") {
             foreach ($arch in "x64", "arm64") {
