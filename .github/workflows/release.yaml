@@ -4,7 +4,7 @@ name: Release
 # is pushed. Both packages carry the version in Directory.Build.props, which the tag has to name: v0.1.0 releases
 # 0.1.0. The packages are uploaded through Trusted Publishing, so the repository holds no API key, and with staged
 # publishing: nuget.org validates them but keeps them private until a maintainer promotes them on the website. The
-# release is complete when the draft is published after that. "Releasing" in README.md describes these steps and
+# release is complete when the draft is published after that. docs/Releasing.md describes these steps and
 # what has to be set up on nuget.org and in the repository.
 #
 # The jobs are split by the permissions they need: only the upload to nuget.org may request an OIDC token, and only

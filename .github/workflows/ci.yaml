@@ -43,7 +43,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      # Lets the tests run the arm64 Linux executables they build, see README.md.
+      # Lets the tests run the arm64 Linux executables they build, see docs/Development.md.
       - name: Install the arm64 emulator
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y qemu-user libc6-arm64-cross
@@ -90,7 +90,7 @@ jobs:
               dotnet src/Ina/$OUTPUT/ina.dll out/il/$app/$app.dll --os windows --arch $arch -o out/win-$arch/$app.exe
             done
           done
-      # Ina.Sdk straight from the source tree, see "Trying Ina.Sdk without packaging it" in README.md.
+      # Ina.Sdk straight from the source tree, see "Trying Ina.Sdk without packaging it" in docs/Development.md.
       - name: Publish the samples for Windows
         run: |
           set -euo pipefail
