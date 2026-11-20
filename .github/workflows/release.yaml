@@ -52,6 +52,18 @@ jobs:
             fi
           done
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      # The README goes into the packages and shows how a project refers to Ina.Sdk, with a version. Setting the
+      # version again must change nothing; the tests check the same, but they are not run here.
+      - name: Check the version in the documentation
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          dotnet run eng/SetVersion.cs -- "$VERSION"
+          if ! git diff --exit-code; then
+            echo "::error::The documentation does not name the version $VERSION, run eng/SetVersion.cs before tagging"
+            exit 1
+          fi
       - name: Pack
         run: |
           set -euo pipefail
